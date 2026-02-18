@@ -14,9 +14,16 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       const customerId = payload.customer?.id?.toString();
       const customerEmail = payload.customer?.email;
 
+      // Look up shop record by domain to get the internal cuid
+      const shopRecord = await prisma.shop.findFirst({ where: { shopifyDomain: shop } });
+      if (!shopRecord) {
+        console.log(`[Compliance] data_request: no shop record found for ${shop}`);
+        return data({ customer_data: [] }, { status: 200 });
+      }
+
       const sessions = await prisma.cartSession.findMany({
         where: {
-          shopId: shop,
+          shopId: shopRecord.id,
           OR: [
             customerId ? { customerId } : {},
             customerEmail ? { customerEmail } : {},
@@ -45,9 +52,16 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       const customerId = payload.customer?.id?.toString();
       const customerEmail = payload.customer?.email;
 
+      // Look up shop record by domain to get the internal cuid
+      const shopRecord = await prisma.shop.findFirst({ where: { shopifyDomain: shop } });
+      if (!shopRecord) {
+        console.log(`[Compliance] customers_redact: no shop record found for ${shop}`);
+        return data({ deleted: 0 }, { status: 200 });
+      }
+
       const toDelete = await prisma.cartSession.findMany({
         where: {
-          shopId: shop,
+          shopId: shopRecord.id,
           OR: [
             customerId ? { customerId } : {},
             customerEmail ? { customerEmail } : {},

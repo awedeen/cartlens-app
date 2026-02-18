@@ -2,6 +2,7 @@
 build
 node_modules
 prisma/*.db
+prisma/*.sqlite
 prisma/*.db-journal
 prisma/*.db-shm
 prisma/*.db-wal

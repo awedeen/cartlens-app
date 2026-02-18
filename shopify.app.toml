@@ -6,7 +6,7 @@ application_url = "https://cartlens-app-production.up.railway.app"
 embedded = true
 
 [auth]
-redirect_urls = [ "https://cartlens-app-production.up.railway.app/auth/callback", "https://glossier-dorene-nonbearded.ngrok-free.dev/auth/callback" ]
+redirect_urls = [ "https://cartlens-app-production.up.railway.app/auth/callback" ]
 
 [access_scopes]
 scopes = "read_products,read_orders,read_customers,write_pixels,read_customer_events"
