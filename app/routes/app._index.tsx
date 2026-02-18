@@ -1,0 +1,1417 @@
+import { useState, useEffect, useRef } from "react";
+import type {
+  ActionFunctionArgs,
+  HeadersFunction,
+  LoaderFunctionArgs,
+} from "react-router";
+import { useLoaderData, useFetcher, data } from "react-router";
+import { authenticate } from "../shopify.server";
+import { boundary } from "@shopify/shopify-app-react-router/server";
+import prisma from "../db.server";
+import type { CartSession, CartEvent } from "@prisma/client";
+
+type SessionWithEvents = CartSession & { events: CartEvent[] };
+
+type SessionWithMeta = SessionWithEvents & { visitNumber?: number };
+
+interface LoaderData {
+  shopId: string;
+  pixelInstalled: boolean;
+  sessions: SessionWithMeta[];
+  stats: {
+    totalCarts: number;
+    totalCheckouts: number;
+    totalOrders: number;
+    conversionRate: number;
+    avgCartValue: number;
+    abandonmentRate: number;
+  };
+  topProducts: Array<{
+    productId: string;
+    productTitle: string;
+    cartAdds: number;
+    checkouts: number;
+    conversions: number;
+    conversionRate: number;
+  }>;
+  topReferrers: Array<{
+    referrer: string;
+    sessions: number;
+    cartAdds: number;
+    conversionRate: number;
+  }>;
+  settings: {
+    timezone: string;
+    retentionDays: number;
+    cartlinkEnabled: boolean;
+    botFilterEnabled: boolean;
+  };
+}
+
+export const loader = async ({ request }: LoaderFunctionArgs) => {
+  const { session, admin } = await authenticate.admin(request);
+  
+  if (!session?.shop) {
+    throw new Response("Unauthorized", { status: 401 });
+  }
+
+  const shopifyDomain = session.shop;
+
+  // Find or create Shop record
+  let shop = await prisma.shop.findUnique({
+    where: { shopifyDomain },
+  });
+
+  if (!shop) {
+    shop = await prisma.shop.create({
+      data: { shopifyDomain },
+    });
+  }
+
+  // Get recent sessions (last 100)
+  const sessions = await prisma.cartSession.findMany({
+    where: { shopId: shop.id },
+    include: {
+      events: {
+        orderBy: { timestamp: "asc" },
+      },
+    },
+    orderBy: { updatedAt: "desc" },
+    take: 100,
+  });
+
+  // Backfill missing product images
+  const eventsNeedingImages = sessions
+    .flatMap((s) => s.events)
+    .filter((e) => e.productId && !e.variantImage);
+  
+  const uniqueProductIds = [...new Set(eventsNeedingImages.map((e) => e.productId!))];
+  
+  if (uniqueProductIds.length > 0 && uniqueProductIds.length <= 20) {
+    try {
+      const gids = uniqueProductIds.map((id) => `"gid://shopify/Product/${id}"`).join(", ");
+      const imgResponse = await admin.graphql(`
+        query {
+          nodes(ids: [${gids}]) {
+            ... on Product {
+              id
+              featuredImage {
+                url(transform: { maxWidth: 100, maxHeight: 100 })
+              }
+            }
+          }
+        }
+      `);
+      const imgResult = await imgResponse.json();
+      const imageMap = new Map<string, string>();
+      for (const node of imgResult?.data?.nodes || []) {
+        if (node?.id && node?.featuredImage?.url) {
+          const numericId = node.id.replace("gid://shopify/Product/", "");
+          imageMap.set(numericId, node.featuredImage.url);
+        }
+      }
+
+      // Update DB and in-memory sessions
+      for (const s of sessions) {
+        for (const e of s.events) {
+          if (e.productId && !e.variantImage && imageMap.has(e.productId)) {
+            const url = imageMap.get(e.productId)!;
+            e.variantImage = url;
+            await prisma.cartEvent.update({
+              where: { id: e.id },
+              data: { variantImage: url },
+            });
+          }
+        }
+      }
+    } catch (imgErr) {
+      console.error("[Loader] Failed to fetch product images:", imgErr);
+    }
+  }
+
+  // Compute visit numbers for repeat visitors
+  const visitCountMap = new Map<string, number>();
+  const customerEmails = sessions.map(s => s.customerEmail).filter(Boolean) as string[];
+  const customerIds = sessions.map(s => s.customerId).filter(Boolean) as string[];
+
+  if (customerEmails.length > 0 || customerIds.length > 0) {
+    const allCustomerSessions = await prisma.cartSession.findMany({
+      where: {
+        shopId: shop.id,
+        OR: [
+          ...(customerEmails.length > 0 ? [{ customerEmail: { in: customerEmails } }] : []),
+          ...(customerIds.length > 0 ? [{ customerId: { in: customerIds } }] : []),
+        ],
+      },
+      select: { id: true, customerEmail: true, customerId: true, createdAt: true },
+      orderBy: { createdAt: "asc" },
+    });
+
+    // Group by customer identifier and assign visit numbers
+    const customerVisits = new Map<string, string[]>();
+    for (const cs of allCustomerSessions) {
+      const key = cs.customerEmail || cs.customerId || "";
+      if (!key) continue;
+      if (!customerVisits.has(key)) customerVisits.set(key, []);
+      customerVisits.get(key)!.push(cs.id);
+    }
+    for (const [, ids] of customerVisits) {
+      ids.forEach((id, idx) => visitCountMap.set(id, idx + 1));
+    }
+  }
+
+  const sessionsWithMeta: SessionWithMeta[] = sessions.map(s => ({
+    ...s,
+    visitNumber: visitCountMap.get(s.id) || 1,
+  }));
+
+  // Calculate stats (last 30 days)
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+  const recentSessions = await prisma.cartSession.findMany({
+    where: {
+      shopId: shop.id,
+      createdAt: { gte: thirtyDaysAgo },
+    },
+    include: {
+      events: true,
+    },
+  });
+
+  const totalCarts = recentSessions.filter((s) => s.cartCreated).length;
+  const totalCheckouts = recentSessions.filter((s) => s.checkoutStarted).length;
+  const totalOrders = recentSessions.filter((s) => s.orderPlaced).length;
+  const conversionRate = totalCarts > 0 ? (totalOrders / totalCarts) * 100 : 0;
+  const avgCartValue = totalCarts > 0 
+    ? recentSessions.reduce((sum, s) => sum + s.cartTotal, 0) / totalCarts
+    : 0;
+  const abandonmentRate = totalCarts > 0 ? ((totalCarts - totalOrders) / totalCarts) * 100 : 0;
+
+  // Top products
+  const productMap: Record<string, { title: string; cartAdds: number; checkouts: number; conversions: number }> = {};
+  
+  for (const session of recentSessions) {
+    const events = session.events || [];
+    const cartAddEvents = events.filter((e: any) => e.eventType === "cart_add");
+    const checkoutItems = events.filter((e: any) => e.eventType === "checkout_item");
+    
+    for (const event of cartAddEvents) {
+      const key = event.productId || "unknown";
+      if (!productMap[key]) {
+        productMap[key] = { title: event.productTitle || "Unknown Product", cartAdds: 0, checkouts: 0, conversions: 0 };
+      }
+      productMap[key].cartAdds += 1;
+      if (session.orderPlaced) {
+        productMap[key].conversions += 1;
+      }
+    }
+    
+    // Count products that reached checkout (once per session, not per event)
+    const checkoutProductIds = new Set(checkoutItems.map((e: any) => e.productId).filter(Boolean));
+    for (const productId of checkoutProductIds) {
+      const item = checkoutItems.find((e: any) => e.productId === productId);
+      if (!productMap[productId]) {
+        productMap[productId] = { title: item?.productTitle || "Unknown Product", cartAdds: 0, checkouts: 0, conversions: 0 };
+      }
+      productMap[productId].checkouts += 1;
+    }
+  }
+
+  const topProducts = Object.entries(productMap)
+    .map(([productId, data]) => ({
+      productId,
+      productTitle: data.title,
+      cartAdds: data.cartAdds,
+      checkouts: data.checkouts,
+      conversions: data.conversions,
+      conversionRate: data.cartAdds > 0 ? (data.conversions / data.cartAdds) * 100 : 0,
+    }))
+    .sort((a, b) => b.cartAdds - a.cartAdds)
+    .slice(0, 10);
+
+  // Top referrers
+  const referrerMap: Record<string, { sessions: number; cartAdds: number; conversions: number }> = {};
+  
+  for (const session of recentSessions) {
+    const referrer = session.referrerUrl || "Direct";
+    if (!referrerMap[referrer]) {
+      referrerMap[referrer] = { sessions: 0, cartAdds: 0, conversions: 0 };
+    }
+    referrerMap[referrer].sessions += 1;
+    if (session.cartCreated) {
+      referrerMap[referrer].cartAdds += 1;
+    }
+    if (session.orderPlaced) {
+      referrerMap[referrer].conversions += 1;
+    }
+  }
+
+  const topReferrers = Object.entries(referrerMap)
+    .map(([referrer, data]) => ({
+      referrer,
+      sessions: data.sessions,
+      cartAdds: data.cartAdds,
+      conversionRate: data.cartAdds > 0 ? (data.conversions / data.cartAdds) * 100 : 0,
+    }))
+    .sort((a, b) => b.sessions - a.sessions)
+    .slice(0, 10);
+
+  // Check if pixel is already installed
+  let pixelInstalled = false;
+  try {
+    const pixelResponse = await admin.graphql(`
+      query { webPixel { id settings } }
+    `);
+    const pixelResult = await pixelResponse.json();
+    const existingPixel = pixelResult?.data?.webPixel;
+    pixelInstalled = !!existingPixel?.id;
+
+    // Auto-update pixel URL if tunnel changed
+    if (existingPixel?.id) {
+      const currentAppUrl = new URL(request.url).origin.replace("http://", "https://");
+      let existingSettings: any = {};
+      try { existingSettings = JSON.parse(existingPixel.settings || "{}"); } catch {}
+      if (existingSettings.app_url !== currentAppUrl) {
+        console.log(`[Pixel] Updating app_url from ${existingSettings.app_url} to ${currentAppUrl}`);
+        const newSettings = JSON.stringify({ ...existingSettings, app_url: currentAppUrl });
+        await admin.graphql(`
+          mutation updatePixel($id: ID!, $settings: JSON!) {
+            webPixelUpdate(id: $id, webPixel: { settings: $settings }) {
+              userErrors { field message }
+            }
+          }
+        `, { variables: { id: existingPixel.id, settings: newSettings } });
+      }
+    }
+  } catch (e) {
+    console.error("[Pixel check/update error]", e);
+  }
+
+  return data<LoaderData>({
+    shopId: shop.id,
+    pixelInstalled,
+    sessions: sessionsWithMeta,
+    stats: {
+      totalCarts,
+      totalCheckouts,
+      totalOrders,
+      conversionRate,
+      avgCartValue,
+      abandonmentRate,
+    },
+    topProducts,
+    topReferrers,
+    settings: {
+      timezone: shop.timezone,
+      retentionDays: shop.retentionDays,
+      cartlinkEnabled: shop.cartlinkEnabled,
+      botFilterEnabled: shop.botFilterEnabled,
+    },
+  });
+};
+
+export const action = async ({ request }: ActionFunctionArgs) => {
+  const { session, admin } = await authenticate.admin(request);
+  
+  if (!session?.shop) {
+    throw new Response("Unauthorized", { status: 401 });
+  }
+
+  const shopifyDomain = session.shop;
+  const formData = await request.formData();
+  const action = formData.get("action");
+
+  const shop = await prisma.shop.findUnique({
+    where: { shopifyDomain },
+  });
+
+  if (!shop) {
+    throw new Response("Shop not found", { status: 404 });
+  }
+
+  if (action === "installPixel") {
+    try {
+      // Get the current app URL from the request
+      const appUrl = new URL(request.url).origin.replace("http://", "https://");
+      const pixelSettings = JSON.stringify({ app_url: appUrl });
+      
+      // Delete existing pixel first (in case we're updating the URL)
+      try {
+        const existingPixel = await admin.graphql(`query { webPixel { id } }`);
+        const existingResult = await existingPixel.json();
+        if (existingResult?.data?.webPixel?.id) {
+          await admin.graphql(`
+            mutation deletePixel($id: ID!) {
+              webPixelDelete(id: $id) { userErrors { field message } }
+            }
+          `, { variables: { id: existingResult.data.webPixel.id } });
+        }
+      } catch { /* no existing pixel */ }
+
+      const response = await admin.graphql(`
+        mutation createPixel($settings: JSON!) {
+          webPixelCreate(webPixel: { settings: $settings }) {
+            userErrors { field message }
+            webPixel { id }
+          }
+        }
+      `, { variables: { settings: pixelSettings } });
+      const result = await response.json();
+      console.log("[Pixel Install]", JSON.stringify(result));
+      const errors = result?.data?.webPixelCreate?.userErrors;
+      if (errors && errors.length > 0) {
+        return data({ success: false, error: errors[0].message });
+      }
+      return data({ success: true, pixelInstalled: true });
+    } catch (e: any) {
+      console.error("[Pixel Install Error]", e);
+      return data({ success: false, error: e.message });
+    }
+  }
+
+  if (action === "updateSettings") {
+    const timezone = formData.get("timezone") as string;
+    const cartlinkEnabled = formData.get("cartlinkEnabled") === "true";
+    const botFilterEnabled = formData.get("botFilterEnabled") === "true";
+
+    await prisma.shop.update({
+      where: { id: shop.id },
+      data: { timezone, cartlinkEnabled, botFilterEnabled },
+    });
+
+    return data({ success: true });
+  }
+
+  return data({ success: false });
+};
+
+export default function Index() {
+  const data = useLoaderData<typeof loader>();
+  const fetcher = useFetcher();
+  const [activeTab, setActiveTab] = useState<"live" | "reports" | "settings">("live");
+  const [sessions, setSessions] = useState<SessionWithMeta[]>(data.sessions);
+  const [selectedSession, setSelectedSession] = useState<SessionWithMeta | null>(null);
+  const eventSourceRef = useRef<EventSource | null>(null);
+  
+  // Settings form state
+  const [timezone, setTimezone] = useState<string>(data.settings.timezone);
+  const [cartlinkEnabled, setCartlinkEnabled] = useState<boolean>(data.settings.cartlinkEnabled);
+  const [botFilterEnabled, setBotFilterEnabled] = useState<boolean>(data.settings.botFilterEnabled);
+
+  // Connect to SSE for real-time updates
+  useEffect(() => {
+    console.log("[SSE Client] Connecting to SSE endpoint for shopId:", data.shopId);
+    
+    const eventSource = new EventSource(`/app/api/sse?shopId=${data.shopId}`);
+    eventSourceRef.current = eventSource;
+
+    eventSource.addEventListener("connected", (e) => {
+      const connData = JSON.parse(e.data);
+      console.log("[SSE Client] Connected successfully:", connData);
+      console.log("[SSE Client] Server instance ID:", connData.instanceId);
+    });
+
+    eventSource.addEventListener("cart-update", (e) => {
+      const update = JSON.parse(e.data);
+      console.log("[SSE Client] Received cart-update:", update);
+
+      setSessions((prev) => {
+        const incoming = update.session;
+        const existing = prev.find((s) => s.id === incoming.id);
+        if (existing) {
+          // Merge: preserve images from existing events when SSE data has null
+          const mergedEvents = (incoming.events || []).map((newEvt: any) => {
+            const oldEvt = existing.events?.find((e: any) => e.id === newEvt.id);
+            if (oldEvt?.variantImage && !newEvt.variantImage) {
+              return { ...newEvt, variantImage: oldEvt.variantImage };
+            }
+            return newEvt;
+          });
+          return prev.map((s) => (s.id === incoming.id ? { ...incoming, events: mergedEvents } : s));
+        } else {
+          return [incoming, ...prev];
+        }
+      });
+    });
+
+    eventSource.onerror = (error) => {
+      console.error("[SSE Client] Connection error:", error);
+      console.error("[SSE Client] ReadyState:", eventSource.readyState);
+      // ReadyState: 0 = CONNECTING, 1 = OPEN, 2 = CLOSED
+    };
+
+    eventSource.addEventListener("open", () => {
+      console.log("[SSE Client] Connection opened");
+    });
+
+    return () => {
+      console.log("[SSE Client] Closing connection");
+      eventSource.close();
+    };
+  }, [data.shopId]);
+
+  const formatTimeAgo = (date: string) => {
+    const now = new Date();
+    const past = new Date(date);
+    const seconds = Math.floor((now.getTime() - past.getTime()) / 1000);
+
+    if (seconds < 60) return `${seconds}s ago`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+    return `${Math.floor(seconds / 86400)}d ago`;
+  };
+
+  const getTimeInCart = (session: SessionWithEvents) => {
+    const firstAdd = session.events?.find((e) => e.eventType === "cart_add");
+    if (!firstAdd) return null;
+    const start = new Date(firstAdd.timestamp).getTime();
+    const end = session.orderPlaced
+      ? new Date(session.updatedAt.toString()).getTime()
+      : Date.now();
+    const mins = Math.floor((end - start) / 60000);
+    if (mins < 1) return "<1m";
+    if (mins < 60) return `${mins}m`;
+    if (mins < 1440) { const hrs = Math.floor(mins / 60); return `${hrs}h ${mins % 60}m`; }
+    const days = Math.floor(mins / 1440);
+    return `${days}d ${Math.floor((mins % 1440) / 60)}h`;
+  };
+
+  const getVisitorName = (session: CartSession) => {
+    if (session.customerName) return session.customerName;
+    if (session.city && session.countryCode) {
+      return `Anonymous - ${session.city}, ${session.countryCode}`;
+    }
+    if (session.countryCode) {
+      return `Anonymous - ${session.countryCode}`;
+    }
+    if (session.city) {
+      return `Anonymous - ${session.city}`;
+    }
+    return "Anonymous Visitor";
+  };
+
+  const getStatusBadge = (session: CartSession) => {
+    if (session.orderPlaced) {
+      return { color: "#008060", label: "Converted" };
+    }
+    if (session.checkoutStarted) {
+      return { color: "#ffc453", label: "Checkout" };
+    }
+    if (session.cartCreated) {
+      return { color: "#6d7175", label: "Browsing" };
+    }
+    return { color: "#e3e3e3", label: "Viewing" };
+  };
+
+  const getEventIcon = (eventType: string) => {
+    switch (eventType) {
+      case "cart_add": return "+";
+      case "cart_remove": return "−";
+      case "checkout_started": return "●";
+      case "checkout_completed": return "✓";
+      case "page_view": return "→";
+      default: return "•";
+    }
+  };
+
+  const CollapsibleProducts = ({ session: s }: { session: SessionWithEvents }) => {
+    const [expanded, setExpanded] = useState(false);
+    const MAX_VISIBLE = 3;
+
+    const quantityMap = new Map<string, { quantity: number; productTitle: string; variantTitle: string | null; variantImage: string | null; price: number }>();
+    for (const e of s.events || []) {
+      if (e.eventType !== "cart_add" && e.eventType !== "cart_remove") continue;
+      const key = e.variantId || e.productId || "unknown";
+      const existing = quantityMap.get(key);
+      const delta = e.eventType === "cart_add" ? (e.quantity || 0) : -(e.quantity || 0);
+      if (existing) {
+        existing.quantity += delta;
+      } else {
+        quantityMap.set(key, {
+          quantity: delta,
+          productTitle: e.productTitle || "Unknown Product",
+          variantTitle: e.variantTitle,
+          variantImage: e.variantImage,
+          price: e.price || 0,
+        });
+      }
+    }
+    const cartItems = Array.from(quantityMap.values()).filter((item) => item.quantity > 0);
+    const removedItems = Array.from(quantityMap.values()).filter((item) => item.quantity <= 0);
+    const allItems = [...cartItems.map(i => ({ ...i, removed: false })), ...removedItems.map(i => ({ ...i, removed: true }))];
+    const totalCount = allItems.length;
+    const hiddenCount = totalCount - MAX_VISIBLE;
+
+    if (totalCount === 0) return null;
+
+    const visibleItems = expanded ? allItems : allItems.slice(0, MAX_VISIBLE);
+
+    const renderRow = (item: any, i: number) => (
+      <div key={i} style={{ display: "flex", alignItems: "center", gap: "8px", opacity: item.removed ? 0.5 : 1 }}>
+        {item.variantImage ? (
+          <img src={item.variantImage} alt="" style={{ width: "32px", height: "32px", objectFit: "cover", borderRadius: "4px", border: "1px solid #e3e3e3", flexShrink: 0 }} />
+        ) : (
+          <div style={{ width: "32px", height: "32px", borderRadius: "4px", border: "1px solid #e3e3e3", background: "#f6f6f7", flexShrink: 0 }} />
+        )}
+        <div style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "12px", color: item.removed ? "#6d7175" : "#202223", textDecoration: item.removed ? "line-through" : "none" }}>
+          {item.productTitle}
+        </div>
+        {item.removed ? (
+          <div style={{ fontSize: "11px", color: "#d82c0d", flexShrink: 0 }}>Removed</div>
+        ) : (
+          <div style={{ fontSize: "12px", color: "#6d7175", flexShrink: 0, whiteSpace: "nowrap" }}>
+            ${item.price.toFixed(2)} ×{item.quantity}
+          </div>
+        )}
+      </div>
+    );
+
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+        {visibleItems.map((item, i) => renderRow(item, i))}
+        {hiddenCount > 0 && (
+          <button
+            onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
+            style={{
+              background: "none",
+              border: "none",
+              padding: "2px 0",
+              fontSize: "12px",
+              color: "#008060",
+              cursor: "pointer",
+              textAlign: "left"
+            }}
+          >
+            {expanded ? "Show less" : `+${hiddenCount} more`}
+          </button>
+        )}
+      </div>
+    );
+  };
+
+  const handleSaveSettings = () => {
+    const formData = new FormData();
+    formData.append("action", "updateSettings");
+    formData.append("timezone", timezone);
+    formData.append("cartlinkEnabled", cartlinkEnabled ? "true" : "false");
+    formData.append("botFilterEnabled", botFilterEnabled ? "true" : "false");
+    
+    fetcher.submit(formData, { method: "POST" });
+  };
+
+  return (
+    <s-page title="CartLens">
+      {/* Tab Navigation */}
+      <div style={{ 
+        marginBottom: "20px",
+        borderBottom: "1px solid #e3e3e3",
+        display: "flex",
+        gap: "0"
+      }}>
+        {[
+          { id: "live" as const, label: "Live Carts" },
+          { id: "reports" as const, label: "Reports" },
+          { id: "settings" as const, label: "Settings" }
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            style={{
+              background: "none",
+              border: "none",
+              padding: "12px 20px",
+              fontSize: "14px",
+              fontWeight: activeTab === tab.id ? 600 : 400,
+              color: activeTab === tab.id ? "#202223" : "#6d7175",
+              borderBottom: activeTab === tab.id ? "2px solid #008060" : "2px solid transparent",
+              cursor: "pointer",
+              transition: "all 0.2s"
+            }}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Live Carts Tab */}
+      {activeTab === "live" && (
+        <div>
+          {selectedSession ? (
+            /* Detail View */
+            <div>
+              <button
+                onClick={() => setSelectedSession(null)}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "#008060",
+                  fontSize: "14px",
+                  cursor: "pointer",
+                  padding: "8px 0",
+                  marginBottom: "16px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "4px"
+                }}
+              >
+                ← Back to list
+              </button>
+
+              <div style={{
+                background: "#ffffff",
+                border: "1px solid #e3e3e3",
+                borderRadius: "8px",
+                padding: "20px",
+                boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
+              }}>
+                {/* Session Header */}
+                <div style={{ marginBottom: "20px", borderBottom: "1px solid #e3e3e3", paddingBottom: "16px" }}>
+                  <h2 style={{ fontSize: "20px", fontWeight: 600, color: "#202223", marginBottom: "8px", display: "flex", alignItems: "center", gap: "8px" }}>
+                    {getVisitorName(selectedSession)}
+                    {(selectedSession.visitNumber ?? 1) > 1 && (
+                      <span style={{
+                        fontSize: "12px",
+                        fontWeight: 600,
+                        color: "#916A00",
+                        background: "#FFF8E6",
+                        padding: "2px 8px",
+                        borderRadius: "4px"
+                      }}>
+                        Visit #{selectedSession.visitNumber}
+                      </span>
+                    )}
+                  </h2>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <span style={{
+                      display: "inline-block",
+                      width: "8px",
+                      height: "8px",
+                      borderRadius: "50%",
+                      background: getStatusBadge(selectedSession).color
+                    }} />
+                    <span style={{ fontSize: "13px", color: "#6d7175" }}>
+                      {getStatusBadge(selectedSession).label}
+                    </span>
+                    {getTimeInCart(selectedSession) && (
+                      <>
+                        <span style={{ fontSize: "13px", color: "#6d7175" }}>•</span>
+                        <span style={{ fontSize: "13px", color: "#6d7175" }}>
+                          Cart age: {getTimeInCart(selectedSession)}
+                        </span>
+                      </>
+                    )}
+                    <span style={{ fontSize: "13px", color: "#6d7175" }}>•</span>
+                    <span style={{ fontSize: "13px", color: "#6d7175" }}>
+                      {formatTimeAgo(selectedSession.updatedAt.toString())}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Visitor Info */}
+                <div style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: "16px",
+                  marginBottom: "20px",
+                  padding: "16px",
+                  background: "#f6f6f7",
+                  borderRadius: "4px"
+                }}>
+                  <div>
+                    <div style={{ fontSize: "12px", color: "#6d7175", marginBottom: "4px" }}>Location</div>
+                    <div style={{ fontSize: "14px", color: "#202223" }}>
+                      {selectedSession.city}, {selectedSession.country} {selectedSession.countryCode && `(${selectedSession.countryCode})`}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "12px", color: "#6d7175", marginBottom: "4px" }}>Device</div>
+                    <div style={{ fontSize: "14px", color: "#202223" }}>
+                      {selectedSession.deviceType || "Unknown"} • {selectedSession.browser || "Unknown"}
+                    </div>
+                  </div>
+                  {selectedSession.referrerUrl && (
+                    <div>
+                      <div style={{ fontSize: "12px", color: "#6d7175", marginBottom: "4px" }}>Referrer</div>
+                      <div style={{ fontSize: "14px", color: "#202223", wordBreak: "break-all" }}>
+                        {selectedSession.referrerUrl}
+                      </div>
+                    </div>
+                  )}
+                  {selectedSession.landingPage && (
+                    <div>
+                      <div style={{ fontSize: "12px", color: "#6d7175", marginBottom: "4px" }}>Landing Page</div>
+                      <div style={{ fontSize: "14px", color: "#202223", wordBreak: "break-all" }}>
+                        {selectedSession.landingPage}
+                      </div>
+                    </div>
+                  )}
+                  <div>
+                    <div style={{ fontSize: "12px", color: "#6d7175", marginBottom: "4px" }}>Cart Total</div>
+                    <div style={{ fontSize: "14px", color: "#202223", fontWeight: 600 }}>
+                      ${selectedSession.cartTotal.toFixed(2)}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "12px", color: "#6d7175", marginBottom: "4px" }}>Items</div>
+                    <div style={{ fontSize: "14px", color: "#202223", fontWeight: 600 }}>
+                      {selectedSession.itemCount}
+                    </div>
+                  </div>
+                  {(() => {
+                    try {
+                      const codes = selectedSession.discountCodes ? JSON.parse(selectedSession.discountCodes as string) : [];
+                      if (codes.length === 0) return null;
+                      return (
+                        <div>
+                          <div style={{ fontSize: "12px", color: "#6d7175", marginBottom: "4px" }}>Discount</div>
+                          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                            {codes.map((dc: any, i: number) => (
+                              <span key={i} style={{
+                                fontSize: "13px",
+                                fontWeight: 600,
+                                color: "#5C6AC4",
+                                background: "#F4F5FA",
+                                padding: "2px 8px",
+                                borderRadius: "4px"
+                              }}>
+                                {dc.code} ({dc.type === "percentage" ? `${dc.amount}%` : `$${dc.amount}`})
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    } catch { return null; }
+                  })()}
+                </div>
+
+                {/* Session Timeline */}
+                <div>
+                  <h3 style={{ fontSize: "16px", fontWeight: 600, color: "#202223", marginBottom: "12px" }}>
+                    Session Timeline
+                  </h3>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                    {selectedSession.events.map((event, idx) => (
+                      <div
+                        key={event.id}
+                        style={{
+                          display: "flex",
+                          alignItems: "flex-start",
+                          gap: "12px",
+                          padding: "12px",
+                          background: idx % 2 === 0 ? "#ffffff" : "#f6f6f7",
+                          borderRadius: "4px",
+                          border: "1px solid #e3e3e3"
+                        }}
+                      >
+                        <div style={{
+                          width: "24px",
+                          height: "24px",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          background: "#ffffff",
+                          border: "1px solid #e3e3e3",
+                          borderRadius: "4px",
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          flexShrink: 0
+                        }}>
+                          {getEventIcon(event.eventType)}
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: "12px", color: "#6d7175", marginBottom: "4px" }}>
+                            {new Date(event.timestamp).toLocaleTimeString()}
+                          </div>
+                          <div style={{ fontSize: "14px", color: "#202223" }}>
+                            {event.eventType === "cart_add" && (
+                              <>
+                                Added {event.productTitle}
+                                {event.variantTitle && ` - ${event.variantTitle}`}
+                                {event.quantity && ` (${event.quantity}x)`}
+                                {event.price && ` — $${event.price.toFixed(2)}`}
+                              </>
+                            )}
+                            {event.eventType === "cart_remove" && (
+                              <>
+                                Removed {event.productTitle}
+                                {event.variantTitle && ` - ${event.variantTitle}`}
+                              </>
+                            )}
+                            {event.eventType === "page_view" && (
+                              <>Viewed {event.pageUrl}</>
+                            )}
+                            {event.eventType === "checkout_started" && "Checkout started"}
+                            {event.eventType === "checkout_completed" && "Order placed"}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* List View */
+            <div>
+              <div style={{ marginBottom: "16px", display: "flex", alignItems: "center", gap: "8px" }}>
+                <h2 style={{ fontSize: "16px", fontWeight: 600, color: "#202223" }}>Recent Cart Activity</h2>
+                <span style={{
+                  background: "#f6f6f7",
+                  color: "#6d7175",
+                  fontSize: "12px",
+                  padding: "2px 8px",
+                  borderRadius: "4px",
+                  fontWeight: 600
+                }}>
+                  {sessions.length}
+                </span>
+              </div>
+
+              {sessions.length === 0 ? (
+                <div style={{
+                  background: "#ffffff",
+                  border: "1px solid #e3e3e3",
+                  borderRadius: "8px",
+                  padding: "32px",
+                  textAlign: "center",
+                  boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
+                }}>
+                  {data.pixelInstalled || fetcher.data?.pixelInstalled ? (
+                    <div>
+                      <div style={{
+                        width: "48px",
+                        height: "48px",
+                        background: "#f6f6f7",
+                        borderRadius: "50%",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        margin: "0 auto 16px",
+                        fontSize: "24px"
+                      }}>
+                        ✓
+                      </div>
+                      <div style={{ fontSize: "16px", fontWeight: 600, color: "#202223", marginBottom: "8px" }}>
+                        Web Pixel is Active
+                      </div>
+                      <div style={{ fontSize: "14px", color: "#6d7175" }}>
+                        Waiting for cart activity on your store...
+                      </div>
+                      <fetcher.Form method="post" style={{ marginTop: "12px" }}>
+                        <input type="hidden" name="action" value="installPixel" />
+                        <button type="submit" style={{ background: "none", border: "1px solid #e3e3e3", padding: "6px 12px", borderRadius: "4px", fontSize: "13px", color: "#6d7175", cursor: "pointer" }}>
+                          {fetcher.state === "submitting" ? "Reinstalling..." : "Reinstall Pixel"}
+                        </button>
+                      </fetcher.Form>
+                      {fetcher.data?.pixelInstalled && <div style={{ marginTop: "8px", fontSize: "13px", color: "#008060" }}>Pixel reinstalled successfully</div>}
+                      {fetcher.data?.error && <div style={{ marginTop: "8px", fontSize: "13px", color: "#d82c0d" }}>Error: {fetcher.data.error}</div>}
+                    </div>
+                  ) : (
+                    <div>
+                      <div style={{
+                        width: "48px",
+                        height: "48px",
+                        background: "#f6f6f7",
+                        borderRadius: "50%",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        margin: "0 auto 16px",
+                        fontSize: "24px"
+                      }}>
+                        ?
+                      </div>
+                      <div style={{ fontSize: "16px", fontWeight: 600, color: "#202223", marginBottom: "8px" }}>
+                        Install Web Pixel
+                      </div>
+                      <div style={{ fontSize: "14px", color: "#6d7175", marginBottom: "16px" }}>
+                        Install the Web Pixel to start tracking cart activity
+                      </div>
+                      <fetcher.Form method="post">
+                        <input type="hidden" name="action" value="installPixel" />
+                        <button
+                          type="submit"
+                          style={{
+                            background: "#008060",
+                            color: "#ffffff",
+                            border: "none",
+                            padding: "10px 16px",
+                            borderRadius: "4px",
+                            fontSize: "14px",
+                            fontWeight: 600,
+                            cursor: "pointer"
+                          }}
+                        >
+                          Install Web Pixel
+                        </button>
+                      </fetcher.Form>
+                      {fetcher.data?.error && (
+                        <div style={{ marginTop: "12px", fontSize: "13px", color: "#d82c0d" }}>
+                          Error: {fetcher.data.error}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                  {sessions.slice(0, 50).map((session) => {
+                    const status = getStatusBadge(session);
+                    const products = session.events
+                      ?.filter((e) => e.eventType === "cart_add")
+                      .map((e) => e.productTitle)
+                      .filter(Boolean)
+                      .filter((v, i, a) => a.indexOf(v) === i);
+                    const images = session.events
+                      ?.filter((e) => e.eventType === "cart_add" && e.variantImage)
+                      .map((e) => e.variantImage!)
+                      .filter((v, i, a) => a.indexOf(v) === i)
+                      .slice(0, 4);
+
+                    return (
+                      <div
+                        key={session.id}
+                        onClick={() => setSelectedSession(session)}
+                        style={{
+                          background: "#ffffff",
+                          border: "1px solid #e3e3e3",
+                          borderRadius: "8px",
+                          padding: "16px",
+                          cursor: "pointer",
+                          transition: "background 0.2s, box-shadow 0.2s",
+                          boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = "#f6f6f7";
+                          e.currentTarget.style.boxShadow = "0 2px 4px rgba(0,0,0,0.1)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = "#ffffff";
+                          e.currentTarget.style.boxShadow = "0 1px 2px rgba(0,0,0,0.05)";
+                        }}
+                      >
+                        {/* Card Header */}
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "4px", gap: "8px" }}>
+                          <div style={{ fontSize: "14px", fontWeight: 600, color: "#202223", minWidth: 0, display: "flex", alignItems: "center", gap: "6px" }}>
+                            <span>{getVisitorName(session)}</span>
+                            {(session.visitNumber ?? 1) > 1 && (
+                              <span style={{
+                                fontSize: "11px",
+                                fontWeight: 600,
+                                color: "#916A00",
+                                background: "#FFF8E6",
+                                padding: "1px 6px",
+                                borderRadius: "3px",
+                                flexShrink: 0
+                              }}>
+                                Visit #{session.visitNumber}
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0, whiteSpace: "nowrap" }}>
+                            {getTimeInCart(session) && (
+                              <span style={{ fontSize: "12px", color: "#919eab" }}>
+                                Cart age: {getTimeInCart(session)}
+                              </span>
+                            )}
+                            <span style={{
+                              display: "inline-block",
+                              width: "8px",
+                              height: "8px",
+                              borderRadius: "50%",
+                              background: status.color,
+                              flexShrink: 0
+                            }} />
+                            <span style={{ fontSize: "12px", color: "#6d7175" }}>
+                              {status.label}
+                            </span>
+                            <span style={{ fontSize: "12px", color: "#919eab" }}>
+                              {formatTimeAgo(session.updatedAt.toString())}
+                            </span>
+                          </div>
+                        </div>
+                        <div style={{ fontSize: "13px", color: session.itemCount === 0 ? "#d82c0d" : "#6d7175", marginBottom: "4px", display: "flex", alignItems: "center", gap: "6px" }}>
+                          <span>{session.itemCount === 0 ? "Cart emptied" : `${session.itemCount} items · $${session.cartTotal.toFixed(2)}`}</span>
+                          {(() => {
+                            try {
+                              const codes = session.discountCodes ? JSON.parse(session.discountCodes as string) : [];
+                              if (codes.length === 0) return null;
+                              return codes.map((dc: any, i: number) => (
+                                <span key={i} style={{
+                                  fontSize: "11px",
+                                  fontWeight: 600,
+                                  color: "#5C6AC4",
+                                  background: "#F4F5FA",
+                                  padding: "1px 6px",
+                                  borderRadius: "3px",
+                                  letterSpacing: "0.3px"
+                                }}>
+                                  {dc.code}
+                                </span>
+                              ));
+                            } catch { return null; }
+                          })()}
+                        </div>
+                        <div style={{ fontSize: "12px", color: "#919eab", marginBottom: "10px" }}>
+                          Created {new Date(session.createdAt.toString()).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                        </div>
+
+                        <CollapsibleProducts session={session} />
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Reports Tab */}
+      {activeTab === "reports" && (
+        <div style={{ overflow: "hidden" }}>
+          {/* Summary Cards */}
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(2, 1fr)",
+            gap: "12px",
+            marginBottom: "24px"
+          }}>
+            {[
+              { label: "Total Carts", value: data.stats.totalCarts, color: "#202223" },
+              { label: "Conversion Rate", value: `${data.stats.conversionRate.toFixed(1)}%`, color: "#008060" },
+              { label: "Avg Cart Value", value: `$${data.stats.avgCartValue.toFixed(2)}`, color: "#202223" },
+              { label: "Abandonment Rate", value: `${data.stats.abandonmentRate.toFixed(1)}%`, color: "#d82c0d" }
+            ].map((stat, idx) => (
+              <div
+                key={idx}
+                style={{
+                  background: "#ffffff",
+                  border: "1px solid #e3e3e3",
+                  borderRadius: "8px",
+                  padding: "16px",
+                  boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
+                }}
+              >
+                <div style={{ fontSize: "22px", fontWeight: 600, color: stat.color, marginBottom: "4px" }}>
+                  {stat.value}
+                </div>
+                <div style={{ fontSize: "12px", color: "#6d7175" }}>
+                  {stat.label}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Abandonment Funnel */}
+          <div style={{
+            background: "#ffffff",
+            border: "1px solid #e3e3e3",
+            borderRadius: "8px",
+            padding: "16px",
+            marginBottom: "20px",
+            boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
+          }}>
+            <h3 style={{ fontSize: "15px", fontWeight: 600, color: "#202223", marginBottom: "14px" }}>
+              Funnel — Last 30 Days
+            </h3>
+            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+              {[
+                {
+                  label: "Added to Cart",
+                  value: data.stats.totalCarts,
+                  percent: 100,
+                  color: "#008060"
+                },
+                {
+                  label: "Checkout Started",
+                  value: data.stats.totalCheckouts,
+                  percent: data.stats.totalCarts > 0 ? (data.stats.totalCheckouts / data.stats.totalCarts) * 100 : 0,
+                  color: "#ffc453"
+                },
+                {
+                  label: "Order Placed",
+                  value: data.stats.totalOrders,
+                  percent: data.stats.conversionRate,
+                  color: "#5C6AC4"
+                }
+              ].map((stage, idx) => (
+                <div key={idx}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
+                    <span style={{ fontSize: "13px", color: "#202223" }}>{stage.label}</span>
+                    <span style={{ fontSize: "13px", color: "#6d7175" }}>
+                      {stage.value} ({stage.percent.toFixed(1)}%)
+                    </span>
+                  </div>
+                  <div style={{ width: "100%", height: "8px", background: "#e3e3e3", borderRadius: "4px", overflow: "hidden" }}>
+                    <div style={{
+                      width: `${stage.percent}%`,
+                      height: "100%",
+                      background: stage.color,
+                      transition: "width 0.3s"
+                    }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Top Products */}
+          <div style={{
+            background: "#ffffff",
+            border: "1px solid #e3e3e3",
+            borderRadius: "8px",
+            overflow: "hidden",
+            marginBottom: "20px",
+            boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
+          }}>
+            <div style={{ padding: "16px 16px 12px" }}>
+              <h3 style={{ fontSize: "15px", fontWeight: 600, color: "#202223", margin: 0 }}>
+                Top Products
+              </h3>
+            </div>
+            {data.topProducts.length === 0 ? (
+              <div style={{ fontSize: "14px", color: "#6d7175", padding: "20px 16px", textAlign: "center" }}>
+                No product data yet
+              </div>
+            ) : (
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ borderTop: "1px solid #e3e3e3", borderBottom: "1px solid #e3e3e3" }}>
+                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "left" }}>Product</th>
+                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Cart adds</th>
+                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Checkouts</th>
+                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Orders</th>
+                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Conv. rate</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.topProducts.map((product, idx) => (
+                    <tr key={product.productId} style={{ borderBottom: idx < data.topProducts.length - 1 ? "1px solid #f1f1f1" : "none" }}>
+                      <td style={{ padding: "10px 16px", fontSize: "13px", fontWeight: 500, color: "#202223", maxWidth: "200px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {product.productTitle}
+                      </td>
+                      <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                        {product.cartAdds}
+                      </td>
+                      <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                        {product.checkouts}
+                      </td>
+                      <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                        {product.conversions}
+                      </td>
+                      <td style={{ padding: "10px 16px", fontSize: "13px", color: "#008060", textAlign: "right", fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>
+                        {product.conversionRate.toFixed(1)}%
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {/* Top Referrers */}
+          <div style={{
+            background: "#ffffff",
+            border: "1px solid #e3e3e3",
+            borderRadius: "8px",
+            overflow: "hidden",
+            marginBottom: "20px",
+            boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
+          }}>
+            <div style={{ padding: "16px 16px 12px" }}>
+              <h3 style={{ fontSize: "15px", fontWeight: 600, color: "#202223", margin: 0 }}>
+                Top Referrers
+              </h3>
+            </div>
+            {data.topReferrers.length === 0 ? (
+              <div style={{ fontSize: "14px", color: "#6d7175", padding: "20px 16px", textAlign: "center" }}>
+                No referrer data yet
+              </div>
+            ) : (
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ borderTop: "1px solid #e3e3e3", borderBottom: "1px solid #e3e3e3" }}>
+                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "left" }}>Source</th>
+                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Sessions</th>
+                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Cart adds</th>
+                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Conv. rate</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.topReferrers.map((referrer, idx) => (
+                    <tr key={idx} style={{ borderBottom: idx < data.topReferrers.length - 1 ? "1px solid #f1f1f1" : "none" }}>
+                      <td style={{ padding: "10px 16px", fontSize: "13px", fontWeight: 500, color: "#202223", maxWidth: "200px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {referrer.referrer}
+                      </td>
+                      <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                        {referrer.sessions}
+                      </td>
+                      <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                        {referrer.cartAdds}
+                      </td>
+                      <td style={{ padding: "10px 16px", fontSize: "13px", color: "#008060", textAlign: "right", fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>
+                        {referrer.conversionRate.toFixed(1)}%
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Settings Tab */}
+      {activeTab === "settings" && (
+        <div>
+          <div style={{
+            background: "#ffffff",
+            border: "1px solid #e3e3e3",
+            borderRadius: "8px",
+            padding: "20px",
+            marginBottom: "20px",
+            boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
+          }}>
+            <h3 style={{ fontSize: "16px", fontWeight: 600, color: "#202223", marginBottom: "20px" }}>
+              General Settings
+            </h3>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+              {/* Timezone */}
+              <div style={{ paddingBottom: "20px", borderBottom: "1px solid #e3e3e3" }}>
+                <label style={{ display: "block", marginBottom: "8px", fontSize: "14px", fontWeight: 600, color: "#202223" }}>
+                  Timezone
+                </label>
+                <div style={{ fontSize: "13px", color: "#6d7175", marginBottom: "8px" }}>
+                  Select your preferred timezone for reporting
+                </div>
+                <select
+                  value={timezone}
+                  onChange={(e) => setTimezone(e.target.value)}
+                  style={{
+                    width: "100%",
+                    maxWidth: "400px",
+                    padding: "8px 12px",
+                    fontSize: "14px",
+                    border: "1px solid #e3e3e3",
+                    borderRadius: "4px",
+                    background: "#ffffff",
+                    color: "#202223"
+                  }}
+                >
+                  <option value="UTC">UTC</option>
+                  <option value="America/New_York">Eastern Time</option>
+                  <option value="America/Chicago">Central Time</option>
+                  <option value="America/Denver">Mountain Time</option>
+                  <option value="America/Los_Angeles">Pacific Time</option>
+                </select>
+              </div>
+
+              {/* Data Retention */}
+              <div style={{ paddingBottom: "20px", borderBottom: "1px solid #e3e3e3" }}>
+                <label style={{ display: "block", marginBottom: "8px", fontSize: "14px", fontWeight: 600, color: "#202223" }}>
+                  Data Retention
+                </label>
+                <div style={{ fontSize: "13px", color: "#6d7175" }}>
+                  Cart data is retained for {data.settings.retentionDays} days
+                </div>
+              </div>
+
+              {/* Bot Filter */}
+              <div style={{ paddingBottom: "20px", borderBottom: "1px solid #e3e3e3" }}>
+                <label style={{ display: "flex", alignItems: "flex-start", gap: "12px", cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={botFilterEnabled}
+                    onChange={(e) => setBotFilterEnabled(e.target.checked)}
+                    style={{
+                      width: "20px",
+                      height: "20px",
+                      marginTop: "2px",
+                      cursor: "pointer"
+                    }}
+                  />
+                  <div>
+                    <div style={{ fontSize: "14px", fontWeight: 600, color: "#202223", marginBottom: "4px" }}>
+                      Bot Filter
+                    </div>
+                    <div style={{ fontSize: "13px", color: "#6d7175" }}>
+                      Filter suspected bot traffic from analytics
+                    </div>
+                  </div>
+                </label>
+              </div>
+
+              {/* Save Button */}
+              <div>
+                <button
+                  onClick={handleSaveSettings}
+                  disabled={fetcher.state === "submitting"}
+                  style={{
+                    background: "#008060",
+                    color: "#ffffff",
+                    border: "none",
+                    padding: "10px 16px",
+                    borderRadius: "4px",
+                    fontSize: "14px",
+                    fontWeight: 600,
+                    cursor: fetcher.state === "submitting" ? "not-allowed" : "pointer",
+                    opacity: fetcher.state === "submitting" ? 0.6 : 1
+                  }}
+                >
+                  {fetcher.state === "submitting" ? "Saving..." : "Save Settings"}
+                </button>
+                {fetcher.data?.success && (
+                  <span style={{ marginLeft: "12px", fontSize: "13px", color: "#008060" }}>
+                    Settings saved successfully
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* CSV Export */}
+          <div style={{
+            background: "#ffffff",
+            border: "1px solid #e3e3e3",
+            borderRadius: "8px",
+            padding: "20px",
+            boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
+          }}>
+            <h3 style={{ fontSize: "16px", fontWeight: 600, color: "#202223", marginBottom: "8px" }}>
+              CSV Export
+            </h3>
+            <div style={{ fontSize: "14px", color: "#6d7175", marginBottom: "16px" }}>
+              Export all cart session data to CSV for analysis
+            </div>
+            <a
+              href="/app/api/export"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: "inline-block",
+                background: "#ffffff",
+                color: "#202223",
+                border: "1px solid #e3e3e3",
+                padding: "10px 16px",
+                borderRadius: "4px",
+                fontSize: "14px",
+                fontWeight: 600,
+                textDecoration: "none",
+                cursor: "pointer"
+              }}
+            >
+              Download CSV
+            </a>
+          </div>
+        </div>
+      )}
+    </s-page>
+  );
+}
+
+export const headers: HeadersFunction = (headersArgs) => {
+  return boundary.headers(headersArgs);
+};

@@ -1,0 +1,54 @@
+# CartLens - Real-time cart activity insights for Shopify stores
+
+name = "CartLens"
+client_id = "5b452ea99ecdcf88e34bef3745c8031e"
+application_url = "https://glossier-dorene-nonbearded.ngrok-free.dev"
+embedded = true
+
+[auth]
+redirect_urls = [ "https://localhost:3000/auth/callback" ]
+
+[access_scopes]
+scopes = "read_products,read_orders,read_customers,write_pixels,read_customer_events"
+
+[webhooks]
+api_version = "2025-10"
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/uninstalled"
+  topics = ["app/uninstalled"]
+
+  [[webhooks.subscriptions]]
+  topics = ["app/scopes_update"]
+  uri = "/webhooks/app/scopes_update"
+
+  [[webhooks.subscriptions]]
+  topics = ["carts/create"]
+  uri = "/webhooks/carts"
+
+  [[webhooks.subscriptions]]
+  topics = ["carts/update"]
+  uri = "/webhooks/carts"
+
+  [[webhooks.subscriptions]]
+  topics = ["checkouts/create"]
+  uri = "/webhooks/checkouts"
+  [[webhooks.subscriptions]]
+  topics = ["checkouts/update"]
+  uri = "/webhooks/checkouts"
+  [[webhooks.subscriptions]]
+  topics = ["orders/create"]
+  uri = "/webhooks/orders"
+
+  # Compliance topics (required for public apps)
+  # [[webhooks.subscriptions]]
+  # uri = "/webhooks/customers/data_request"
+  # compliance_topics = ["customers/data_request"]
+
+  # [[webhooks.subscriptions]]
+  # uri = "/webhooks/customers/redact"
+  # compliance_topics = ["customers/redact"]
+
+  # [[webhooks.subscriptions]]
+  # uri = "/webhooks/shop/redact"
+  # compliance_topics = ["shop/redact"]

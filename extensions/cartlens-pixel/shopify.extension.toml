@@ -1,0 +1,23 @@
+uid = "83689c6c-0e7d-24e3-c38c-a467a66d613f923a1f2f"
+type = "web_pixel_extension"
+name = "CartLens Pixel"
+runtime_context = "strict"
+
+[build]
+command = ""
+path = "src/index.ts"
+
+[settings]
+type = "object"
+
+  [settings.fields.app_url]
+  name = "App URL"
+  description = "The base URL of the CartLens app"
+  type = "single_line_text_field"
+  validations = []
+
+[customer_privacy]
+analytics = true
+marketing = false
+preferences = false
+sale_of_data = "disabled"

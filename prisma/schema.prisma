@@ -1,0 +1,173 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:dev.sqlite"
+}
+
+// ============================================
+// Shopify Session (required by template)
+// ============================================
+
+model Session {
+  id            String    @id
+  shop          String
+  state         String
+  isOnline      Boolean   @default(false)
+  scope         String?
+  expires       DateTime?
+  accessToken   String
+  userId        BigInt?
+  firstName     String?
+  lastName      String?
+  email         String?
+  accountOwner  Boolean   @default(false)
+  locale        String?
+  collaborator  Boolean?  @default(false)
+  emailVerified Boolean?  @default(false)
+  refreshToken        String?
+  refreshTokenExpires DateTime?
+}
+
+// ============================================
+// CartLens Models
+// ============================================
+
+model Shop {
+  id              String   @id @default(cuid())
+  shopifyDomain   String   @unique
+  timezone        String   @default("America/Los_Angeles")
+  retentionDays   Int      @default(90)
+  cartlinkEnabled Boolean  @default(false)
+  botFilterEnabled Boolean @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  sessions        CartSession[]
+  settings        ShopSettings?
+  aggregatedStats AggregatedStats[]
+}
+
+model CartSession {
+  id            String   @id @default(cuid())
+  shopId        String
+  shop          Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  visitorId     String   // anonymous fingerprint or customer ID
+  customerId    String?  // Shopify customer ID if logged in
+  customerEmail String?
+  customerName  String?
+
+  // Traffic source
+  referrerUrl   String?
+  landingPage   String?
+  utmSource     String?
+  utmMedium     String?
+  utmCampaign   String?
+
+  // Visitor info
+  ipAddress     String?
+  city          String?
+  country       String?
+  countryCode   String?
+  deviceType    String?  // mobile, desktop, tablet
+  browser       String?
+  os            String?
+  userAgent     String?
+
+  // Funnel status
+  cartCreated     Boolean @default(false)
+  checkoutStarted Boolean @default(false)
+  orderPlaced     Boolean @default(false)
+  orderId         String? // Shopify order ID if converted
+  orderValue      Float?  // Order total if converted
+
+  // Discount codes
+  discountCodes String? // JSON array of {code, amount, type}
+
+  // Cart summary
+  cartTotal  Float @default(0)
+  itemCount  Int   @default(0)
+
+  // Bot detection
+  isSuspectedBot    Boolean @default(false)
+  botReason         String?
+  merchantOverride  String? // "allow" or "block"
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  events CartEvent[]
+
+  @@unique([shopId, visitorId])
+  @@index([shopId])
+  @@index([shopId, createdAt])
+  @@index([visitorId])
+}
+
+model CartEvent {
+  id        String   @id @default(cuid())
+  sessionId String
+  session   CartSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  eventType String // page_view, cart_add, cart_remove, checkout_started, checkout_completed, search
+
+  // Product data (for cart events)
+  productId    String?
+  productTitle String?
+  variantId    String?
+  variantTitle String?
+  variantImage String?
+  quantity     Int?
+  price        Float?
+
+  // Page data (for page_view events)
+  pageUrl   String?
+  pageTitle String?
+
+  timestamp DateTime @default(now())
+
+  @@index([sessionId])
+  @@index([sessionId, timestamp])
+}
+
+model ShopSettings {
+  id     String @id @default(cuid())
+  shopId String @unique
+  shop   Shop   @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  // Display preferences
+  visibleColumns      String @default("[]") // JSON array of column keys
+  
+  // Exclusions
+  excludedProducts    String @default("[]") // JSON array of product IDs
+  excludedCollections String @default("[]") // JSON array of collection IDs
+
+  // Bot filter
+  botWhitelist String @default("[]") // JSON array of IPs/UAs to allow
+  botBlacklist String @default("[]") // JSON array of IPs/UAs to block
+
+  updatedAt DateTime @updatedAt
+}
+
+model AggregatedStats {
+  id     String   @id @default(cuid())
+  shopId String
+  shop   Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  date   DateTime // day the stats are for
+
+  // Daily aggregates
+  totalSessions  Int   @default(0)
+  totalCarts     Int   @default(0)
+  totalCheckouts Int   @default(0)
+  totalOrders    Int   @default(0)
+  totalCartValue Float @default(0)
+  totalOrderValue Float @default(0)
+  uniqueProducts Int   @default(0)
+
+  createdAt DateTime @default(now())
+
+  @@unique([shopId, date])
+  @@index([shopId])
+}
