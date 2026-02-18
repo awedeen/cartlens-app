@@ -1,11 +1,32 @@
 -- CreateTable
+CREATE TABLE "Session" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "shop" TEXT NOT NULL,
+    "state" TEXT NOT NULL,
+    "isOnline" BOOLEAN NOT NULL DEFAULT false,
+    "scope" TEXT,
+    "expires" DATETIME,
+    "accessToken" TEXT NOT NULL,
+    "userId" BIGINT,
+    "firstName" TEXT,
+    "lastName" TEXT,
+    "email" TEXT,
+    "accountOwner" BOOLEAN NOT NULL DEFAULT false,
+    "locale" TEXT,
+    "collaborator" BOOLEAN DEFAULT false,
+    "emailVerified" BOOLEAN DEFAULT false,
+    "refreshToken" TEXT,
+    "refreshTokenExpires" DATETIME
+);
+
+-- CreateTable
 CREATE TABLE "Shop" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "shopifyDomain" TEXT NOT NULL,
-    "timezone" TEXT NOT NULL DEFAULT 'UTC',
+    "timezone" TEXT NOT NULL DEFAULT 'America/Los_Angeles',
     "retentionDays" INTEGER NOT NULL DEFAULT 90,
     "cartlinkEnabled" BOOLEAN NOT NULL DEFAULT false,
-    "botFilterEnabled" BOOLEAN NOT NULL DEFAULT true,
+    "botFilterEnabled" BOOLEAN NOT NULL DEFAULT false,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL
 );
@@ -36,6 +57,7 @@ CREATE TABLE "CartSession" (
     "orderPlaced" BOOLEAN NOT NULL DEFAULT false,
     "orderId" TEXT,
     "orderValue" REAL,
+    "discountCodes" TEXT,
     "cartTotal" REAL NOT NULL DEFAULT 0,
     "itemCount" INTEGER NOT NULL DEFAULT 0,
     "isSuspectedBot" BOOLEAN NOT NULL DEFAULT false,
@@ -104,6 +126,9 @@ CREATE INDEX "CartSession_shopId_createdAt_idx" ON "CartSession"("shopId", "crea
 
 -- CreateIndex
 CREATE INDEX "CartSession_visitorId_idx" ON "CartSession"("visitorId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "CartSession_shopId_visitorId_key" ON "CartSession"("shopId", "visitorId");
 
 -- CreateIndex
 CREATE INDEX "CartEvent_sessionId_idx" ON "CartEvent"("sessionId");
