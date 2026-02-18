@@ -1,12 +1,12 @@
 # CartLens - Real-time cart activity insights for Shopify stores
 
 name = "CartLens"
-client_id = "5b452ea99ecdcf88e34bef3745c8031e"
+client_id = "b7d5b0517262f37204cbf79228bc0f22"
 application_url = "https://cartlens-app-production.up.railway.app"
 embedded = true
 
 [auth]
-redirect_urls = [ "https://localhost:3000/auth/callback" ]
+redirect_urls = [ "https://cartlens-app-production.up.railway.app/auth/callback", "https://glossier-dorene-nonbearded.ngrok-free.dev/auth/callback" ]
 
 [access_scopes]
 scopes = "read_products,read_orders,read_customers,write_pixels,read_customer_events"

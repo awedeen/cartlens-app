@@ -1,6 +1,6 @@
-import { authenticate } from "~/shopify.server";
+import { authenticate } from "../shopify.server";
 import { ActionFunctionArgs, data } from "react-router";
-import prisma from "~/db.server";
+import prisma from "../db.server";
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { topic, payload, shop } = await authenticate.webhook(request);
@@ -71,21 +71,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     case "SHOP_REDACT": {
       // Merchant uninstalled — delete all their data (48h after uninstall).
-      const shopRecord = await prisma.shop.findFirst({ where: { shopDomain: shop } });
+      // CartSession, ShopSettings, CartEvent, AggregatedStats all cascade on Shop delete.
+      const shopRecord = await prisma.shop.findFirst({ where: { shopifyDomain: shop } });
 
       if (shopRecord) {
-        // Delete all cart events and sessions for this shop
-        const sessions = await prisma.cartSession.findMany({
-          where: { shopId: shopRecord.id },
-          select: { id: true },
-        });
-        const sessionIds = sessions.map(s => s.id);
-
-        if (sessionIds.length > 0) {
-          await prisma.cartEvent.deleteMany({ where: { sessionId: { in: sessionIds } } });
-          await prisma.cartSession.deleteMany({ where: { shopId: shopRecord.id } });
-        }
-        await prisma.shopSettings.deleteMany({ where: { shopId: shopRecord.id } });
         await prisma.shop.delete({ where: { id: shopRecord.id } });
         console.log(`[Compliance] shop_redact: deleted all data for shop ${shop}`);
       } else {
