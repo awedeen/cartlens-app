@@ -2,7 +2,7 @@
 
 name = "CartLens"
 client_id = "5b452ea99ecdcf88e34bef3745c8031e"
-application_url = "https://glossier-dorene-nonbearded.ngrok-free.dev"
+application_url = "https://cartlens-app-production.up.railway.app"
 embedded = true
 
 [auth]
