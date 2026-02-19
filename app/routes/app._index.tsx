@@ -398,6 +398,7 @@ export default function Index() {
   const [timezone, setTimezone] = useState<string>(data.settings.timezone);
   const [cartlinkEnabled, setCartlinkEnabled] = useState<boolean>(data.settings.cartlinkEnabled);
   const [botFilterEnabled, setBotFilterEnabled] = useState<boolean>(data.settings.botFilterEnabled);
+  const [reportRange, setReportRange] = useState<7 | 30 | 90>(30);
 
   // Connect to SSE for real-time updates
   useEffect(() => {
@@ -598,6 +599,41 @@ export default function Index() {
     
     fetcher.submit(formData, { method: "POST" });
   };
+
+  // Compute report stats client-side from loaded sessions, filtered by reportRange
+  const reportRangeCutoff = new Date();
+  reportRangeCutoff.setDate(reportRangeCutoff.getDate() - reportRange);
+  const filteredForReports = sessions.filter(s => new Date(s.createdAt) >= reportRangeCutoff);
+  const rCarts = filteredForReports.filter(s => s.cartCreated).length;
+  const rCheckouts = filteredForReports.filter(s => s.checkoutStarted).length;
+  const rOrders = filteredForReports.filter(s => s.orderPlaced).length;
+  const rAvgCartValue = rCarts > 0
+    ? filteredForReports.filter(s => s.cartCreated).reduce((sum, s) => sum + s.cartTotal, 0) / rCarts
+    : 0;
+  const rConversionRate = rCarts > 0 ? (rOrders / rCarts) * 100 : 0;
+  const rCheckoutRate = rCarts > 0 ? (rCheckouts / rCarts) * 100 : 0;
+  const rCheckoutToOrderRate = rCheckouts > 0 ? (rOrders / rCheckouts) * 100 : 0;
+  // Top products for selected range
+  const rProductMap: Record<string, { title: string; cartAdds: number; checkouts: number; conversions: number }> = {};
+  for (const s of filteredForReports) {
+    const evts = (s.events || []) as any[];
+    for (const e of evts.filter((e: any) => e.eventType === "cart_add")) {
+      const key = e.productId || "unknown";
+      if (!rProductMap[key]) rProductMap[key] = { title: e.productTitle || "Unknown", cartAdds: 0, checkouts: 0, conversions: 0 };
+      rProductMap[key].cartAdds += 1;
+      if (s.orderPlaced) rProductMap[key].conversions += 1;
+    }
+    const ciProductIds = new Set(evts.filter((e: any) => e.eventType === "checkout_item").map((e: any) => e.productId).filter(Boolean));
+    for (const pid of ciProductIds) {
+      const item = evts.find((e: any) => e.eventType === "checkout_item" && e.productId === pid);
+      if (!rProductMap[pid as string]) rProductMap[pid as string] = { title: item?.productTitle || "Unknown", cartAdds: 0, checkouts: 0, conversions: 0 };
+      rProductMap[pid as string].checkouts += 1;
+    }
+  }
+  const rTopProducts = Object.entries(rProductMap)
+    .map(([productId, d]) => ({ productId, productTitle: d.title, cartAdds: d.cartAdds, checkouts: d.checkouts, conversions: d.conversions, conversionRate: d.cartAdds > 0 ? (d.conversions / d.cartAdds) * 100 : 0 }))
+    .sort((a, b) => b.cartAdds - a.cartAdds)
+    .slice(0, 10);
 
   return (
     <s-page title="CartLens">
@@ -1131,6 +1167,30 @@ export default function Index() {
       {/* Reports Tab */}
       {activeTab === "reports" && (
         <div style={{ overflow: "hidden" }}>
+          {/* Date Range Toggle */}
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "16px" }}>
+            <div style={{ display: "flex", border: "1px solid #e3e3e3", borderRadius: "6px", overflow: "hidden" }}>
+              {([7, 30, 90] as const).map((r) => (
+                <button
+                  key={r}
+                  onClick={() => setReportRange(r)}
+                  style={{
+                    padding: "6px 14px",
+                    fontSize: "13px",
+                    fontWeight: reportRange === r ? 600 : 400,
+                    color: reportRange === r ? "#ffffff" : "#6d7175",
+                    background: reportRange === r ? "#008060" : "#ffffff",
+                    border: "none",
+                    borderRight: r !== 90 ? "1px solid #e3e3e3" : "none",
+                    cursor: "pointer"
+                  }}
+                >
+                  {r}d
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Summary Cards */}
           <div style={{
             display: "grid",
@@ -1139,10 +1199,10 @@ export default function Index() {
             marginBottom: "24px"
           }}>
             {[
-              { label: "Total Carts", value: data.stats.totalCarts, color: "#202223" },
-              { label: "Conversion Rate", value: `${data.stats.conversionRate.toFixed(1)}%`, color: "#008060" },
-              { label: "Avg Cart Value", value: `$${data.stats.avgCartValue.toFixed(2)}`, color: "#202223" },
-              { label: "Abandonment Rate", value: `${data.stats.abandonmentRate.toFixed(1)}%`, color: "#d82c0d" }
+              { label: "Total Carts", value: rCarts, color: "#202223" },
+              { label: "Conversion Rate", value: `${rConversionRate.toFixed(1)}%`, color: "#008060" },
+              { label: "Avg Cart Value", value: `$${rAvgCartValue.toFixed(2)}`, color: "#202223" },
+              { label: "Total Orders", value: rOrders, color: "#008060" }
             ].map((stat, idx) => (
               <div
                 key={idx}
@@ -1164,7 +1224,7 @@ export default function Index() {
             ))}
           </div>
 
-          {/* Abandonment Funnel */}
+          {/* Funnel */}
           <div style={{
             background: "#ffffff",
             border: "1px solid #e3e3e3",
@@ -1174,26 +1234,29 @@ export default function Index() {
             boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
           }}>
             <h3 style={{ fontSize: "15px", fontWeight: 600, color: "#202223", marginBottom: "14px" }}>
-              Funnel — Last 30 Days
+              Funnel — Last {reportRange} Days
             </h3>
             <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
               {[
                 {
                   label: "Added to Cart",
-                  value: data.stats.totalCarts,
-                  percent: 100,
+                  value: rCarts,
+                  barPercent: 100,
+                  subLabel: "baseline",
                   color: "#008060"
                 },
                 {
                   label: "Checkout Started",
-                  value: data.stats.totalCheckouts,
-                  percent: data.stats.totalCarts > 0 ? (data.stats.totalCheckouts / data.stats.totalCarts) * 100 : 0,
+                  value: rCheckouts,
+                  barPercent: rCheckoutRate,
+                  subLabel: `${rCheckoutRate.toFixed(1)}% of carts`,
                   color: "#ffc453"
                 },
                 {
                   label: "Order Placed",
-                  value: data.stats.totalOrders,
-                  percent: data.stats.conversionRate,
+                  value: rOrders,
+                  barPercent: rConversionRate,
+                  subLabel: `${rCheckoutToOrderRate.toFixed(1)}% of checkouts`,
                   color: "#5C6AC4"
                 }
               ].map((stage, idx) => (
@@ -1201,12 +1264,12 @@ export default function Index() {
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
                     <span style={{ fontSize: "13px", color: "#202223" }}>{stage.label}</span>
                     <span style={{ fontSize: "13px", color: "#6d7175" }}>
-                      {stage.value} ({stage.percent.toFixed(1)}%)
+                      {stage.value} <span style={{ color: "#adb0b3", fontSize: "12px" }}>· {stage.subLabel}</span>
                     </span>
                   </div>
                   <div style={{ width: "100%", height: "8px", background: "#e3e3e3", borderRadius: "4px", overflow: "hidden" }}>
                     <div style={{
-                      width: `${stage.percent}%`,
+                      width: `${stage.barPercent}%`,
                       height: "100%",
                       background: stage.color,
                       transition: "width 0.3s"
@@ -1231,7 +1294,7 @@ export default function Index() {
                 Top Products
               </h3>
             </div>
-            {data.topProducts.length === 0 ? (
+            {rTopProducts.length === 0 ? (
               <div style={{ fontSize: "14px", color: "#6d7175", padding: "20px 16px", textAlign: "center" }}>
                 No product data yet
               </div>
@@ -1247,8 +1310,8 @@ export default function Index() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.topProducts.map((product, idx) => (
-                    <tr key={product.productId} style={{ borderBottom: idx < data.topProducts.length - 1 ? "1px solid #f1f1f1" : "none" }}>
+                  {rTopProducts.map((product, idx) => (
+                    <tr key={product.productId} style={{ borderBottom: idx < rTopProducts.length - 1 ? "1px solid #f1f1f1" : "none" }}>
                       <td style={{ padding: "10px 16px", fontSize: "13px", fontWeight: 500, color: "#202223", maxWidth: "200px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {product.productTitle}
                       </td>
