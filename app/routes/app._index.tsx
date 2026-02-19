@@ -402,6 +402,16 @@ export default function Index() {
   const [mounted, setMounted] = useState(false);
   useEffect(() => { requestAnimationFrame(() => setMounted(true)); }, []);
 
+  // Detail panel animations
+  const [detailMounted, setDetailMounted] = useState(false);
+  const [detailFlashing, setDetailFlashing] = useState(false);
+  useEffect(() => {
+    if (selectedSession) {
+      setDetailMounted(false);
+      requestAnimationFrame(() => setDetailMounted(true));
+    }
+  }, [selectedSession?.id]);
+
   const triggerFlash = (id: string) => {
     setFlashIds(prev => new Set([...prev, id]));
     setTimeout(() => {
@@ -470,9 +480,11 @@ export default function Index() {
             return newEvt;
           });
           const updated = { ...incoming, events: mergedEvents };
-          // If this session is open in the detail panel, update it live
+          // If this session is open in the detail panel, update it live + flash
           if (selectedSessionRef.current?.id === incoming.id) {
             setSelectedSession(updated);
+            setDetailFlashing(true);
+            setTimeout(() => setDetailFlashing(false), 700);
           }
           return prev.map((s) => (s.id === incoming.id ? updated : s));
         } else {
@@ -790,7 +802,10 @@ export default function Index() {
         <div>
           {selectedSession ? (
             /* Detail View */
-            <div>
+            <div style={{
+              opacity: detailMounted ? 1 : 0,
+              transition: detailMounted ? "opacity 0.3s ease" : "none"
+            }}>
               <button
                 onClick={() => setSelectedSession(null)}
                 style={{
@@ -810,11 +825,12 @@ export default function Index() {
               </button>
 
               <div style={{
-                background: "#ffffff",
+                background: detailFlashing ? "#fffbef" : "#ffffff",
                 border: "1px solid #e3e3e3",
                 borderRadius: "8px",
                 padding: "20px",
-                boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
+                boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
+                transition: detailFlashing ? "none" : "background-color 0.7s ease"
               }}>
                 {/* Session Header */}
                 <div style={{ marginBottom: "20px", borderBottom: "1px solid #e3e3e3", paddingBottom: "16px" }}>
