@@ -86,6 +86,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     updates.discountCodes = JSON.stringify(uniqueDiscountCodes);
   }
 
+  // Total discount amount
+  const totalDiscounts = parseFloat(payload.total_discounts || "0");
+  if (totalDiscounts > 0) {
+    updates.totalDiscounts = totalDiscounts;
+  }
+
   // Geo from billing or shipping address
   const billing = payload.billing_address || payload.shipping_address;
   console.log(`[Checkout Webhook] billing/shipping address:`, JSON.stringify(billing));

@@ -87,8 +87,9 @@ model CartSession {
   discountCodes String? // JSON array of {code, amount, type}
 
   // Cart summary
-  cartTotal  Float @default(0)
-  itemCount  Int   @default(0)
+  cartTotal      Float @default(0)
+  totalDiscounts Float @default(0)
+  itemCount      Int   @default(0)
 
   // Bot detection
   isSuspectedBot    Boolean @default(false)

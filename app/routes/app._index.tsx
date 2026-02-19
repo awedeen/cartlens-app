@@ -754,6 +754,11 @@ export default function Index() {
                     <div style={{ fontSize: "12px", color: "#6d7175", marginBottom: "4px" }}>Cart Total</div>
                     <div style={{ fontSize: "14px", color: "#202223", fontWeight: 600 }}>
                       ${selectedSession.cartTotal.toFixed(2)}
+                      {selectedSession.totalDiscounts > 0 && (
+                        <span style={{ fontSize: "12px", fontWeight: 400, color: "#008060", marginLeft: "6px" }}>
+                          −${selectedSession.totalDiscounts.toFixed(2)} saved
+                        </span>
+                      )}
                     </div>
                   </div>
                   <div>
@@ -1036,7 +1041,12 @@ export default function Index() {
                           </div>
                         </div>
                         <div style={{ fontSize: "13px", color: session.itemCount === 0 ? "#d82c0d" : "#6d7175", marginBottom: "4px", display: "flex", alignItems: "center", gap: "6px" }}>
-                          <span>{session.itemCount === 0 ? "Cart emptied" : `${session.itemCount} items · $${session.cartTotal.toFixed(2)}`}</span>
+                          <span>
+                            {session.itemCount === 0 ? "Cart emptied" : `${session.itemCount} items · $${session.cartTotal.toFixed(2)}`}
+                            {session.totalDiscounts > 0 && (
+                              <span style={{ color: "#008060", marginLeft: "4px" }}>−${session.totalDiscounts.toFixed(2)}</span>
+                            )}
+                          </span>
                           {(() => {
                             try {
                               const codes = session.discountCodes ? JSON.parse(session.discountCodes as string) : [];
