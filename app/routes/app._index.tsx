@@ -786,7 +786,7 @@ export default function Index() {
                       return (
                         <div>
                           <div style={{ fontSize: "12px", color: "#6d7175", marginBottom: "4px" }}>Discount</div>
-                          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center" }}>
                             {codes.map((dc: any, i: number) => (
                               <span key={i} style={{
                                 fontSize: "13px",
@@ -796,9 +796,14 @@ export default function Index() {
                                 padding: "2px 8px",
                                 borderRadius: "4px"
                               }}>
-                                {dc.code} ({dc.type === "percentage" ? `${dc.amount}%` : `$${dc.amount}`})
+                                {dc.code}
                               </span>
                             ))}
+                            {selectedSession.totalDiscounts > 0 && (
+                              <span style={{ fontSize: "13px", color: "#008060", fontWeight: 600 }}>
+                                −${selectedSession.totalDiscounts.toFixed(2)}
+                              </span>
+                            )}
                           </div>
                         </div>
                       );
