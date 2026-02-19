@@ -390,6 +390,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 export default function Index() {
   const data = useLoaderData<typeof loader>();
   const fetcher = useFetcher();
+  const settingsFetcher = useFetcher();
   const [activeTab, setActiveTab] = useState<"live" | "reports" | "settings">("live");
   const [sessions, setSessions] = useState<SessionWithMeta[]>(data.sessions);
   const [selectedSession, setSelectedSession] = useState<SessionWithMeta | null>(null);
@@ -651,7 +652,7 @@ export default function Index() {
     formData.append("timezone", timezone);
     formData.append("cartlinkEnabled", cartlinkEnabled ? "true" : "false");
     formData.append("botFilterEnabled", botFilterEnabled ? "true" : "false");
-    fetcher.submit(formData, { method: "POST" });
+    settingsFetcher.submit(formData, { method: "POST" });
     setSavedSettings({ timezone, cartlinkEnabled, botFilterEnabled });
   };
 
