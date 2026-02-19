@@ -1206,26 +1206,28 @@ export default function Index() {
                               </span>
                             )}
                           </div>
-                          <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0, whiteSpace: "nowrap" }}>
-                            {getTimeInCart(session) && (
+                          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "3px", flexShrink: 0 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "6px", whiteSpace: "nowrap" }}>
+                              <span style={{
+                                display: "inline-block",
+                                width: "8px",
+                                height: "8px",
+                                borderRadius: "50%",
+                                background: status.color,
+                                flexShrink: 0
+                              }} />
+                              <span style={{ fontSize: "12px", color: "#6d7175" }}>
+                                {status.label}
+                              </span>
                               <span style={{ fontSize: "12px", color: "#919eab" }}>
-                                Cart age: {getTimeInCart(session)}
+                                {formatTimeAgo(session.updatedAt.toString())}
+                              </span>
+                            </div>
+                            {getTimeInCart(session) && (
+                              <span style={{ fontSize: "11px", color: "#919eab" }}>
+                                {getTimeInCart(session)} in cart
                               </span>
                             )}
-                            <span style={{
-                              display: "inline-block",
-                              width: "8px",
-                              height: "8px",
-                              borderRadius: "50%",
-                              background: status.color,
-                              flexShrink: 0
-                            }} />
-                            <span style={{ fontSize: "12px", color: "#6d7175" }}>
-                              {status.label}
-                            </span>
-                            <span style={{ fontSize: "12px", color: "#919eab" }}>
-                              {formatTimeAgo(session.updatedAt.toString())}
-                            </span>
                           </div>
                         </div>
                         <div style={{ fontSize: "13px", color: session.itemCount === 0 ? "#d82c0d" : "#6d7175", marginBottom: "4px", display: "flex", alignItems: "center", gap: "6px" }}>
