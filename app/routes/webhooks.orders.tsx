@@ -28,6 +28,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     // Extract order data
     const orderId = payload.id?.toString();
+    const orderNumber = payload.order_number?.toString();
     const customerId = payload.customer?.id?.toString();
     const customerEmail = payload.customer?.email;
     const orderValue = parseFloat(payload.total_price || "0");
@@ -61,6 +62,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         data: {
           orderPlaced: true,
           orderId,
+          orderNumber: orderNumber || null,
           orderValue,
           customerId: customerId || session.customerId,
           customerEmail: customerEmail || session.customerEmail,

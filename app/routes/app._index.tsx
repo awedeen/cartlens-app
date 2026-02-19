@@ -886,7 +886,9 @@ export default function Index() {
                                 {event.price && ` — $${event.price.toFixed(2)}`}
                               </>
                             )}
-                            {event.eventType === "checkout_completed" && "Order placed"}
+                            {event.eventType === "checkout_completed" && (
+                              <>Order placed{(selectedSession as any).orderNumber ? ` — #${(selectedSession as any).orderNumber}` : ""}</>
+                            )}
                           </div>
                         </div>
                       </div>
