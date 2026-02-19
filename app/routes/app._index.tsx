@@ -1236,27 +1236,23 @@ export default function Index() {
             <h3 style={{ fontSize: "15px", fontWeight: 600, color: "#202223", marginBottom: "14px" }}>
               Funnel — Last {reportRange} Days
             </h3>
+            <div style={{ marginBottom: "8px", fontSize: "13px", color: "#6d7175" }}>
+              {rCarts} carts total
+            </div>
             <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
               {[
                 {
-                  label: "Added to Cart",
-                  value: rCarts,
-                  barPercent: 100,
-                  subLabel: "100%",
-                  color: "#008060"
-                },
-                {
                   label: "Checkout Started",
                   value: rCheckouts,
+                  total: rCarts,
                   barPercent: rCheckoutRate,
-                  subLabel: `${rCheckoutRate.toFixed(1)}%`,
                   color: "#ffc453"
                 },
                 {
                   label: "Order Placed",
                   value: rOrders,
+                  total: rCarts,
                   barPercent: rConversionRate,
-                  subLabel: `${rConversionRate.toFixed(1)}%`,
                   color: "#5C6AC4"
                 }
               ].map((stage, idx) => (
@@ -1264,7 +1260,8 @@ export default function Index() {
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
                     <span style={{ fontSize: "13px", color: "#202223" }}>{stage.label}</span>
                     <span style={{ fontSize: "13px", color: "#6d7175" }}>
-                      {stage.value} <span style={{ color: "#adb0b3", fontSize: "12px" }}>· {stage.subLabel}</span>
+                      {stage.value} of {stage.total}
+                      <span style={{ color: "#adb0b3", fontSize: "12px" }}> · {stage.barPercent.toFixed(1)}%</span>
                     </span>
                   </div>
                   <div style={{ width: "100%", height: "8px", background: "#e3e3e3", borderRadius: "4px", overflow: "hidden" }}>
