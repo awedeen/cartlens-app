@@ -73,7 +73,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     where: { shopId: shop.id },
     include: {
       events: {
-        orderBy: { timestamp: "asc" },
+        orderBy: { timestamp: "desc" },
       },
     },
     orderBy: { updatedAt: "desc" },
@@ -818,7 +818,15 @@ export default function Index() {
                     Session Timeline
                   </h3>
                   <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                    {selectedSession.events.map((event, idx) => (
+                    {selectedSession.events.map((event) => {
+                        const isConversion = event.eventType === "checkout_completed";
+                        const isCheckout = event.eventType === "checkout_started" || event.eventType === "checkout_item";
+                        const rowBg = isConversion ? "#f1faf5" : isCheckout ? "#fdf9ed" : "#ffffff";
+                        const rowBorder = isConversion ? "1px solid #95c9b4" : isCheckout ? "1px solid #e0c065" : "1px solid #e3e3e3";
+                        const iconBg = isConversion ? "#007a5a" : isCheckout ? "#b7891a" : "#ffffff";
+                        const iconColor = (isConversion || isCheckout) ? "#ffffff" : "#202223";
+                        const iconBorder = isConversion ? "1px solid #007a5a" : isCheckout ? "1px solid #b7891a" : "1px solid #e3e3e3";
+                        return (
                       <div
                         key={event.id}
                         style={{
@@ -826,9 +834,9 @@ export default function Index() {
                           alignItems: "flex-start",
                           gap: "12px",
                           padding: "12px",
-                          background: idx % 2 === 0 ? "#ffffff" : "#f6f6f7",
+                          background: rowBg,
                           borderRadius: "4px",
-                          border: "1px solid #e3e3e3"
+                          border: rowBorder
                         }}
                       >
                         <div style={{
@@ -837,12 +845,13 @@ export default function Index() {
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
-                          background: "#ffffff",
-                          border: "1px solid #e3e3e3",
+                          background: iconBg,
+                          border: iconBorder,
                           borderRadius: "4px",
                           fontSize: "12px",
                           fontWeight: 600,
-                          flexShrink: 0
+                          flexShrink: 0,
+                          color: iconColor
                         }}>
                           {getEventIcon(event.eventType)}
                         </div>
@@ -881,7 +890,7 @@ export default function Index() {
                           </div>
                         </div>
                       </div>
-                    ))}
+                    ); })}
                   </div>
                 </div>
               </div>
