@@ -479,20 +479,33 @@ export default function Index() {
         const incoming = update.session;
         const existing = prev.find((s) => s.id === incoming.id);
         if (existing) {
-          // Merge: preserve images from existing events when SSE data has null
-          const mergedEvents = (incoming.events || []).map((newEvt: any) => {
-            const oldEvt = existing.events?.find((e: any) => e.id === newEvt.id);
-            if (oldEvt?.variantImage && !newEvt.variantImage) {
-              return { ...newEvt, variantImage: oldEvt.variantImage };
+          // Patch incoming events onto the full existing history — never drop events
+          const existingEvents: any[] = existing.events || [];
+          const incomingEvents: any[] = incoming.events || [];
+          const patched = [...existingEvents];
+          for (const newEvt of incomingEvents) {
+            const idx = patched.findIndex((e) => e.id === newEvt.id);
+            if (idx >= 0) {
+              // Update in place; preserve image if SSE sent null
+              const old = patched[idx];
+              patched[idx] = (old?.variantImage && !newEvt.variantImage)
+                ? { ...newEvt, variantImage: old.variantImage }
+                : newEvt;
+            } else {
+              patched.push(newEvt); // new event — add it
             }
-            return newEvt;
-          });
-          const updated = { ...incoming, events: mergedEvents };
+          }
+          patched.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+          const updated = { ...incoming, events: patched };
           // If this session is open in the detail panel, update it live
           if (selectedSessionRef.current?.id === incoming.id) {
             setSelectedSession(updated);
           }
-          return prev.map((s) => (s.id === incoming.id ? updated : s));
+          // Replace in-place then re-sort so active sessions bubble to top
+          return prev
+            .map((s) => (s.id === incoming.id ? updated : s))
+            .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
         } else {
           return [incoming, ...prev];
         }
