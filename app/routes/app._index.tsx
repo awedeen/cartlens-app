@@ -508,6 +508,7 @@ export default function Index() {
       case "cart_remove": return "−";
       case "checkout_started": return "●";
       case "checkout_completed": return "✓";
+      case "checkout_item": return "○";
       case "page_view": return "→";
       default: return "•";
     }
@@ -868,6 +869,14 @@ export default function Index() {
                               <>Viewed {event.pageUrl}</>
                             )}
                             {event.eventType === "checkout_started" && "Checkout started"}
+                            {event.eventType === "checkout_item" && (
+                              <>
+                                In checkout: {event.productTitle}
+                                {event.variantTitle && ` - ${event.variantTitle}`}
+                                {event.quantity && ` (${event.quantity}x)`}
+                                {event.price && ` — $${event.price.toFixed(2)}`}
+                              </>
+                            )}
                             {event.eventType === "checkout_completed" && "Order placed"}
                           </div>
                         </div>
