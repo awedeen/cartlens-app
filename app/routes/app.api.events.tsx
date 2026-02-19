@@ -216,6 +216,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     return data({ success: true, sessionId: cartSession.id, eventId: event.id });
   } catch (error) {
+    if (error instanceof Response) throw error;
     console.error("[API Events] Error:", error);
     return data({ error: "Internal server error" }, { status: 500 });
   }
