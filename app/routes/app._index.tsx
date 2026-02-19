@@ -867,7 +867,7 @@ export default function Index() {
                         key={event.id}
                         style={{
                           display: "flex",
-                          alignItems: "flex-start",
+                          alignItems: "center",
                           gap: "12px",
                           padding: "12px",
                           background: rowBg,
@@ -876,16 +876,16 @@ export default function Index() {
                         }}
                       >
                         <div style={{
-                          width: "24px",
-                          height: "24px",
+                          width: "28px",
+                          height: "28px",
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
                           background: iconBg,
                           border: iconBorder,
                           borderRadius: "4px",
-                          fontSize: "12px",
-                          fontWeight: 600,
+                          fontSize: "16px",
+                          fontWeight: 700,
                           flexShrink: 0,
                           color: iconColor
                         }}>
