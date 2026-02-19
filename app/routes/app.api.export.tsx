@@ -78,6 +78,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       },
     });
   } catch (error) {
+    // authenticate.admin throws a Response for redirects (OAuth, session refresh) — must rethrow
+    if (error instanceof Response) throw error;
     console.error("[Export] Error:", error);
     return new Response("Internal server error", { status: 500 });
   }
