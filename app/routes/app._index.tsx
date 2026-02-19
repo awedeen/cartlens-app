@@ -1242,21 +1242,21 @@ export default function Index() {
                   label: "Added to Cart",
                   value: rCarts,
                   barPercent: 100,
-                  subLabel: "baseline",
+                  subLabel: "100%",
                   color: "#008060"
                 },
                 {
                   label: "Checkout Started",
                   value: rCheckouts,
                   barPercent: rCheckoutRate,
-                  subLabel: `${rCheckoutRate.toFixed(1)}% of carts`,
+                  subLabel: `${rCheckoutRate.toFixed(1)}%`,
                   color: "#ffc453"
                 },
                 {
                   label: "Order Placed",
                   value: rOrders,
                   barPercent: rConversionRate,
-                  subLabel: `${rCheckoutToOrderRate.toFixed(1)}% of checkouts`,
+                  subLabel: `${rConversionRate.toFixed(1)}%`,
                   color: "#5C6AC4"
                 }
               ].map((stage, idx) => (
