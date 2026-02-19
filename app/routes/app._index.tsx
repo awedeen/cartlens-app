@@ -693,6 +693,13 @@ export default function Index() {
 
   return (
     <s-page title="CartLens">
+      <style>{`
+        @keyframes liveBreathe {
+          0%, 100% { opacity: 1; transform: scale(1); box-shadow: 0 0 0 0 rgba(0, 128, 96, 0.5); }
+          50% { opacity: 0.7; transform: scale(0.82); box-shadow: 0 0 0 4px rgba(0, 128, 96, 0); }
+        }
+      `}</style>
+
       {/* Contextual Save Bar — shown when Settings tab has unsaved changes */}
       <SaveBar open={isSettingsDirty}>
         <button variant="primary" onClick={handleSaveSettings}>Save</button>
@@ -707,7 +714,23 @@ export default function Index() {
         gap: "0"
       }}>
         {[
-          { id: "live" as const, label: "Live Carts" },
+          {
+            id: "live" as const,
+            label: (
+              <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <span style={{
+                  width: "7px",
+                  height: "7px",
+                  borderRadius: "50%",
+                  background: "#008060",
+                  display: "inline-block",
+                  flexShrink: 0,
+                  animation: "liveBreathe 2s ease-in-out infinite",
+                }} />
+                Live Carts
+              </span>
+            )
+          },
           { id: "reports" as const, label: "Reports" },
           { id: "settings" as const, label: "Settings" }
         ].map((tab) => (
