@@ -419,25 +419,6 @@ export default function Index() {
   };
   const [reportRange, setReportRange] = useState<7 | 30 | 90>(30);
 
-  // Inject breathing animation keyframes into document head (style tags in JSX are filtered by Shopify iframe)
-  useEffect(() => {
-    const id = "cartlens-keyframes";
-    if (!document.getElementById(id)) {
-      const style = document.createElement("style");
-      style.id = id;
-      style.textContent = `
-        @keyframes liveBreathe {
-          0%, 100% { opacity: 1; transform: scale(1); }
-          50% { opacity: 0.45; transform: scale(0.75); }
-        }
-      `;
-      document.head.appendChild(style);
-    }
-    return () => {
-      document.getElementById(id)?.remove();
-    };
-  }, []);
-
   // Connect to SSE for real-time updates
   useEffect(() => {
     console.log("[SSE Client] Connecting to SSE endpoint for shopId:", data.shopId);
@@ -737,7 +718,6 @@ export default function Index() {
                   background: "#008060",
                   display: "inline-block",
                   flexShrink: 0,
-                  animation: "liveBreathe 2s ease-in-out infinite",
                 }} />
                 Live Carts
               </span>
