@@ -402,6 +402,15 @@ export default function Index() {
   const [mounted, setMounted] = useState(false);
   useEffect(() => { requestAnimationFrame(() => setMounted(true)); }, []);
 
+  // Inject live dot keyframe animation
+  useEffect(() => {
+    const style = document.createElement("style");
+    style.id = "cartlens-live-dot";
+    style.textContent = `@keyframes livePulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.35;transform:scale(0.75)} }`;
+    document.head.appendChild(style);
+    return () => { document.head.removeChild(style); };
+  }, []);
+
   // Detail panel animations
   const [detailMounted, setDetailMounted] = useState(false);
   const [detailFlashing, setDetailFlashing] = useState(false);
@@ -769,6 +778,7 @@ export default function Index() {
                   background: "#008060",
                   display: "inline-block",
                   flexShrink: 0,
+                  animation: "livePulse 2s ease-in-out infinite",
                 }} />
                 Live Carts
               </span>
