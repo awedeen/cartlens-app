@@ -39,7 +39,7 @@ model Shop {
   id              String   @id @default(cuid())
   shopifyDomain   String   @unique
   timezone        String   @default("America/Los_Angeles")
-  retentionDays   Int      @default(30)
+  retentionDays   Int      @default(90)
   cartlinkEnabled Boolean  @default(false)
   botFilterEnabled Boolean @default(false)
   createdAt       DateTime @default(now())
