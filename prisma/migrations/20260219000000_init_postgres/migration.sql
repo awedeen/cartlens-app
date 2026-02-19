@@ -1,11 +1,14 @@
+-- CreateSchema
+CREATE SCHEMA IF NOT EXISTS "public";
+
 -- CreateTable
 CREATE TABLE "Session" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "shop" TEXT NOT NULL,
     "state" TEXT NOT NULL,
     "isOnline" BOOLEAN NOT NULL DEFAULT false,
     "scope" TEXT,
-    "expires" DATETIME,
+    "expires" TIMESTAMP(3),
     "accessToken" TEXT NOT NULL,
     "userId" BIGINT,
     "firstName" TEXT,
@@ -16,24 +19,28 @@ CREATE TABLE "Session" (
     "collaborator" BOOLEAN DEFAULT false,
     "emailVerified" BOOLEAN DEFAULT false,
     "refreshToken" TEXT,
-    "refreshTokenExpires" DATETIME
+    "refreshTokenExpires" TIMESTAMP(3),
+
+    CONSTRAINT "Session_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "Shop" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "shopifyDomain" TEXT NOT NULL,
     "timezone" TEXT NOT NULL DEFAULT 'America/Los_Angeles',
-    "retentionDays" INTEGER NOT NULL DEFAULT 90,
+    "retentionDays" INTEGER NOT NULL DEFAULT 30,
     "cartlinkEnabled" BOOLEAN NOT NULL DEFAULT false,
     "botFilterEnabled" BOOLEAN NOT NULL DEFAULT false,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "Shop_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "CartSession" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "shopId" TEXT NOT NULL,
     "visitorId" TEXT NOT NULL,
     "customerId" TEXT,
@@ -56,21 +63,23 @@ CREATE TABLE "CartSession" (
     "checkoutStarted" BOOLEAN NOT NULL DEFAULT false,
     "orderPlaced" BOOLEAN NOT NULL DEFAULT false,
     "orderId" TEXT,
-    "orderValue" REAL,
+    "orderValue" DOUBLE PRECISION,
     "discountCodes" TEXT,
-    "cartTotal" REAL NOT NULL DEFAULT 0,
+    "cartTotal" DOUBLE PRECISION NOT NULL DEFAULT 0,
+    "totalDiscounts" DOUBLE PRECISION NOT NULL DEFAULT 0,
     "itemCount" INTEGER NOT NULL DEFAULT 0,
     "isSuspectedBot" BOOLEAN NOT NULL DEFAULT false,
     "botReason" TEXT,
     "merchantOverride" TEXT,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL,
-    CONSTRAINT "CartSession_shopId_fkey" FOREIGN KEY ("shopId") REFERENCES "Shop" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "CartSession_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "CartEvent" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "sessionId" TEXT NOT NULL,
     "eventType" TEXT NOT NULL,
     "productId" TEXT,
@@ -79,40 +88,43 @@ CREATE TABLE "CartEvent" (
     "variantTitle" TEXT,
     "variantImage" TEXT,
     "quantity" INTEGER,
-    "price" REAL,
+    "price" DOUBLE PRECISION,
     "pageUrl" TEXT,
     "pageTitle" TEXT,
-    "timestamp" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "CartEvent_sessionId_fkey" FOREIGN KEY ("sessionId") REFERENCES "CartSession" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    "timestamp" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "CartEvent_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "ShopSettings" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "shopId" TEXT NOT NULL,
     "visibleColumns" TEXT NOT NULL DEFAULT '[]',
     "excludedProducts" TEXT NOT NULL DEFAULT '[]',
     "excludedCollections" TEXT NOT NULL DEFAULT '[]',
     "botWhitelist" TEXT NOT NULL DEFAULT '[]',
     "botBlacklist" TEXT NOT NULL DEFAULT '[]',
-    "updatedAt" DATETIME NOT NULL,
-    CONSTRAINT "ShopSettings_shopId_fkey" FOREIGN KEY ("shopId") REFERENCES "Shop" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "ShopSettings_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "AggregatedStats" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "shopId" TEXT NOT NULL,
-    "date" DATETIME NOT NULL,
+    "date" TIMESTAMP(3) NOT NULL,
     "totalSessions" INTEGER NOT NULL DEFAULT 0,
     "totalCarts" INTEGER NOT NULL DEFAULT 0,
     "totalCheckouts" INTEGER NOT NULL DEFAULT 0,
     "totalOrders" INTEGER NOT NULL DEFAULT 0,
-    "totalCartValue" REAL NOT NULL DEFAULT 0,
-    "totalOrderValue" REAL NOT NULL DEFAULT 0,
+    "totalCartValue" DOUBLE PRECISION NOT NULL DEFAULT 0,
+    "totalOrderValue" DOUBLE PRECISION NOT NULL DEFAULT 0,
     "uniqueProducts" INTEGER NOT NULL DEFAULT 0,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "AggregatedStats_shopId_fkey" FOREIGN KEY ("shopId") REFERENCES "Shop" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "AggregatedStats_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateIndex
@@ -144,3 +156,16 @@ CREATE INDEX "AggregatedStats_shopId_idx" ON "AggregatedStats"("shopId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "AggregatedStats_shopId_date_key" ON "AggregatedStats"("shopId", "date");
+
+-- AddForeignKey
+ALTER TABLE "CartSession" ADD CONSTRAINT "CartSession_shopId_fkey" FOREIGN KEY ("shopId") REFERENCES "Shop"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "CartEvent" ADD CONSTRAINT "CartEvent_sessionId_fkey" FOREIGN KEY ("sessionId") REFERENCES "CartSession"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ShopSettings" ADD CONSTRAINT "ShopSettings_shopId_fkey" FOREIGN KEY ("shopId") REFERENCES "Shop"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "AggregatedStats" ADD CONSTRAINT "AggregatedStats_shopId_fkey" FOREIGN KEY ("shopId") REFERENCES "Shop"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
