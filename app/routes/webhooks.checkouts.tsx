@@ -74,12 +74,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     updates.discountCodes = JSON.stringify(discountCodes);
   }
 
-  // Geo from billing address
+  // Geo from billing or shipping address
   const billing = payload.billing_address || payload.shipping_address;
+  console.log(`[Checkout Webhook] billing/shipping address:`, JSON.stringify(billing));
   if (billing) {
     if (billing.city) updates.city = billing.city;
     if (billing.country) updates.country = billing.country;
     if (billing.country_code) updates.countryCode = billing.country_code;
+    console.log(`[Checkout Webhook] geo update: city=${billing.city}, country=${billing.country}, countryCode=${billing.country_code}`);
   }
 
   await prisma.cartSession.update({
