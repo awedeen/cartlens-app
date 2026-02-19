@@ -397,6 +397,8 @@ export default function Index() {
   const [selectedSession, setSelectedSession] = useState<SessionWithMeta | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
   const [flashIds, setFlashIds] = useState<Set<string>>(new Set());
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { requestAnimationFrame(() => setMounted(true)); }, []);
 
   const triggerFlash = (id: string) => {
     setFlashIds(prev => new Set([...prev, id]));
@@ -715,6 +717,9 @@ export default function Index() {
         <button variant="primary" onClick={handleSaveSettings}>Save</button>
         <button onClick={handleDiscardSettings}>Discard</button>
       </SaveBar>
+
+      {/* Page content — fades in on load */}
+      <div style={{ opacity: mounted ? 1 : 0, transition: "opacity 0.35s ease" }}>
 
       {/* Tab Navigation */}
       <div style={{ 
@@ -1765,6 +1770,7 @@ export default function Index() {
           </div>
         </div>
       )}
+      </div>{/* end fade-in wrapper */}
     </s-page>
   );
 }
