@@ -143,7 +143,7 @@ export default function PrivacyPolicy() {
       </p>
       <p>
         <strong>CartLens Support</strong><br />
-        Email: <a href="mailto:support@cartlens.app" style={{ color: "#1a1a1a" }}>support@cartlens.app</a>
+        Email: <a href="mailto:alex@horizonmotorsport.com" style={{ color: "#1a1a1a" }}>alex@horizonmotorsport.com</a>
       </p>
     </div>
   );

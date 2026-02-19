@@ -41,7 +41,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       }
     }
 
-    // Fetch sessions
+    // Fetch sessions — cap at 10,000 rows to prevent OOM on large stores
     const sessions = await prisma.cartSession.findMany({
       where,
       include: {
@@ -50,6 +50,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         },
       },
       orderBy: { createdAt: "desc" },
+      take: 10000,
     });
 
     // Generate CSV

@@ -15,9 +15,19 @@ class SSEManager {
     console.log(`[SSE Manager] Created new instance: ${this.instanceId}`);
   }
 
-  addClient(client: SSEClient) {
+  addClient(client: SSEClient): boolean {
+    // Cap at 10 concurrent SSE connections per shop (prevents tab/connection flooding)
+    const shopClientCount = Array.from(this.clients.values()).filter(
+      (c) => c.shopId === client.shopId
+    ).length;
+    if (shopClientCount >= 10) {
+      console.warn(`[SSE Manager ${this.instanceId}] Connection limit reached for shop ${client.shopId}, rejecting client ${client.id}`);
+      try { client.controller.close(); } catch {}
+      return false;
+    }
     this.clients.set(client.id, client);
     console.log(`[SSE Manager ${this.instanceId}] Client connected: ${client.id} for shop ${client.shopId} (total clients: ${this.clients.size})`);
+    return true;
   }
 
   removeClient(clientId: string) {

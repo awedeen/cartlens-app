@@ -8,6 +8,7 @@ import prisma from "../db.server";
 import { detectBot } from "../services/bot.server";
 // Geo now handled via Cloudflare headers — no external API needed
 import sseManager from "../services/sse.server";
+import { checkRateLimit, sanitizeString } from "../utils/security.server";
 
 function parseUserAgent(ua: string | null): { browser: string | null; os: string | null } {
   if (!ua) return { browser: null, os: null };
@@ -34,6 +35,15 @@ function parseUserAgent(ua: string | null): { browser: string | null; os: string
 export const action = async ({ request }: ActionFunctionArgs) => {
   if (request.method !== "POST") {
     return data({ error: "Method not allowed" }, { status: 405 });
+  }
+
+  // Rate limit by IP — 120 requests/minute covers normal pixel activity
+  const clientIp =
+    request.headers.get("cf-connecting-ip") ||
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    "unknown";
+  if (!checkRateLimit(clientIp, 120, 60_000)) {
+    return data({ error: "Too many requests" }, { status: 429 });
   }
 
   try {
@@ -75,8 +85,21 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       billingCountryCode,
     } = payload;
 
+    // Sanitize string inputs — cap length and strip whitespace
+    const safeShopDomain = sanitizeString(shopDomain, 100);
+    const safeVisitorId = sanitizeString(visitorId, 128);
+    const safeCustomerEmail = sanitizeString(customerEmail, 255);
+    const safeCustomerName = sanitizeString(customerName, 255);
+    const safePageUrl = sanitizeString(pageUrl, 512);
+    const safePageTitle = sanitizeString(pageTitle, 255);
+    const safeReferrerUrl = sanitizeString(referrerUrl, 512);
+    const safeLandingPage = sanitizeString(landingPage, 512);
+    const safeUtmSource = sanitizeString(utmSource, 100);
+    const safeUtmMedium = sanitizeString(utmMedium, 100);
+    const safeUtmCampaign = sanitizeString(utmCampaign, 255);
+
     // Validate required fields
-    if (!shopDomain || !visitorId || !eventType) {
+    if (!safeShopDomain || !safeVisitorId || !eventType) {
       return data({ error: "Missing required fields: shopDomain, visitorId, eventType" }, { status: 400 });
     }
 
@@ -89,23 +112,23 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     // Look up shop in Session table to verify it's a real installed shop
     const session = await prisma.session.findFirst({
-      where: { shop: shopDomain },
+      where: { shop: safeShopDomain! },
     });
 
     if (!session) {
-      console.warn(`[Public API] Invalid shop domain: ${shopDomain}`);
+      console.warn(`[Public API] Invalid shop domain: ${safeShopDomain}`);
       return data({ error: "Invalid shop" }, { status: 403 });
     }
 
     // Find or create Shop record
     let shop = await prisma.shop.findUnique({
-      where: { shopifyDomain: shopDomain },
+      where: { shopifyDomain: safeShopDomain! },
       include: { settings: true },
     });
 
     if (!shop) {
       shop = await prisma.shop.create({
-        data: { shopifyDomain: shopDomain },
+        data: { shopifyDomain: safeShopDomain! },
         include: { settings: true },
       });
     }
@@ -129,7 +152,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     let cartSession = await prisma.cartSession.findFirst({
       where: {
         shopId: shop.id,
-        visitorId,
+        visitorId: safeVisitorId!,
       },
       orderBy: { createdAt: "desc" },
     });
@@ -138,15 +161,15 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       cartSession = await prisma.cartSession.create({
         data: {
           shopId: shop.id,
-          visitorId,
+          visitorId: safeVisitorId!,
           customerId,
-          customerEmail,
-          customerName,
-          referrerUrl,
-          landingPage,
-          utmSource,
-          utmMedium,
-          utmCampaign,
+          customerEmail: safeCustomerEmail,
+          customerName: safeCustomerName,
+          referrerUrl: safeReferrerUrl,
+          landingPage: safeLandingPage,
+          utmSource: safeUtmSource,
+          utmMedium: safeUtmMedium,
+          utmCampaign: safeUtmCampaign,
           ipAddress: resolvedIP,
           city,
           country,
@@ -187,8 +210,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         variantImage: variant?.image,
         quantity,
         price,
-        pageUrl,
-        pageTitle,
+        pageUrl: safePageUrl,
+        pageTitle: safePageTitle,
         timestamp: timestamp ? new Date(timestamp) : new Date(),
       },
     });
