@@ -1246,7 +1246,7 @@ export default function Index() {
                           <span>
                             {session.itemCount === 0 ? "Cart emptied" : (
                               <>
-                                {`${session.itemCount} items · `}
+                                {`${session.itemCount} ${session.itemCount === 1 ? "item" : "items"} · `}
                                 {session.totalDiscounts > 0 ? (
                                   <>
                                     <span style={{ textDecoration: "line-through", color: "#8c9196" }}>${session.cartTotal.toFixed(2)}</span>
