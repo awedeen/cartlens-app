@@ -78,8 +78,9 @@ model CartSession {
 
   // Funnel status
   cartCreated     Boolean @default(false)
-  checkoutStarted Boolean @default(false)
-  orderPlaced     Boolean @default(false)
+  checkoutStarted   Boolean @default(false)
+  checkoutAbandoned Boolean @default(false)
+  orderPlaced       Boolean @default(false)
   orderId         String? // Shopify order ID if converted
   orderNumber     String? // Human-readable order number e.g. "1024"
   orderValue      Float?  // Order total if converted

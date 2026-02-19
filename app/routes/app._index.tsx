@@ -532,6 +532,9 @@ export default function Index() {
     if (session.orderPlaced) {
       return { color: "#008060", label: "Converted" };
     }
+    if ((session as any).checkoutAbandoned) {
+      return { color: "#e07a00", label: "Returned" };
+    }
     if (session.checkoutStarted) {
       return { color: "#ffc453", label: "Checkout" };
     }
@@ -572,6 +575,13 @@ export default function Index() {
         return (
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" xmlns="http://www.w3.org/2000/svg">
             <circle cx="7" cy="7" r="4.5"/>
+          </svg>
+        );
+      case "checkout_abandoned":
+        return (
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
+            <line x1="12" y1="7" x2="2" y2="7"/>
+            <polyline points="6,3 2,7 6,11"/>
           </svg>
         );
       case "page_view":
@@ -956,11 +966,12 @@ export default function Index() {
                     {selectedSession.events.map((event) => {
                         const isConversion = event.eventType === "checkout_completed";
                         const isCheckout = event.eventType === "checkout_started" || event.eventType === "checkout_item";
-                        const rowBg = isConversion ? "#f1faf5" : isCheckout ? "#fdf9ed" : "#ffffff";
-                        const rowBorder = isConversion ? "1px solid #95c9b4" : isCheckout ? "1px solid #e0c065" : "1px solid #e3e3e3";
-                        const iconBg = isConversion ? "#007a5a" : isCheckout ? "#b7891a" : "#ffffff";
-                        const iconColor = (isConversion || isCheckout) ? "#ffffff" : "#202223";
-                        const iconBorder = isConversion ? "1px solid #007a5a" : isCheckout ? "1px solid #b7891a" : "1px solid #e3e3e3";
+                        const isAbandoned = event.eventType === "checkout_abandoned";
+                        const rowBg = isConversion ? "#f1faf5" : isAbandoned ? "#fff4ec" : isCheckout ? "#fdf9ed" : "#ffffff";
+                        const rowBorder = isConversion ? "1px solid #95c9b4" : isAbandoned ? "1px solid #e8a060" : isCheckout ? "1px solid #e0c065" : "1px solid #e3e3e3";
+                        const iconBg = isConversion ? "#007a5a" : isAbandoned ? "#c05c00" : isCheckout ? "#b7891a" : "#ffffff";
+                        const iconColor = (isConversion || isCheckout || isAbandoned) ? "#ffffff" : "#202223";
+                        const iconBorder = isConversion ? "1px solid #007a5a" : isAbandoned ? "1px solid #c05c00" : isCheckout ? "1px solid #b7891a" : "1px solid #e3e3e3";
                         return (
                       <div
                         key={event.id}
@@ -1024,6 +1035,7 @@ export default function Index() {
                             {event.eventType === "checkout_completed" && (
                               <>Order placed{(selectedSession as any).orderNumber ? ` — #${(selectedSession as any).orderNumber}` : ""}</>
                             )}
+                            {event.eventType === "checkout_abandoned" && "Left checkout — returned to browsing"}
                           </div>
                         </div>
                       </div>

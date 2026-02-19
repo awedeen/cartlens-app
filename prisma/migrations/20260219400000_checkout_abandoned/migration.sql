@@ -1,0 +1,1 @@
+ALTER TABLE "CartSession" ADD COLUMN IF NOT EXISTS "checkoutAbandoned" BOOLEAN NOT NULL DEFAULT false;

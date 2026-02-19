@@ -253,10 +253,31 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     if (eventType === "checkout_started") {
       updates.checkoutStarted = true;
+      // If they're starting checkout again, clear any prior abandonment
+      if (cartSession.checkoutAbandoned) {
+        updates.checkoutAbandoned = false;
+      }
     }
 
     if (eventType === "checkout_completed") {
       updates.orderPlaced = true;
+    }
+
+    // Detect checkout abandonment: page_view after checkout started, before order placed
+    if (
+      eventType === "page_view" &&
+      cartSession.checkoutStarted &&
+      !cartSession.orderPlaced &&
+      !cartSession.checkoutAbandoned
+    ) {
+      await prisma.cartEvent.create({
+        data: {
+          sessionId: cartSession.id,
+          eventType: "checkout_abandoned",
+          timestamp: timestamp ? new Date(timestamp) : new Date(),
+        },
+      });
+      updates.checkoutAbandoned = true;
     }
 
     if (Object.keys(updates).length > 0) {
