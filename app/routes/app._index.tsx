@@ -406,14 +406,13 @@ export default function Index() {
   useEffect(() => {
     const style = document.createElement("style");
     style.id = "cartlens-live-dot";
-    style.textContent = `@keyframes livePulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.35;transform:scale(0.75)} }`;
+    style.textContent = `@keyframes livePulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.35;transform:scale(0.75)} } @keyframes clFade { from{opacity:0} to{opacity:1} }`;
     document.head.appendChild(style);
     return () => { document.head.removeChild(style); };
   }, []);
 
   // Detail panel animations
   const [detailMounted, setDetailMounted] = useState(false);
-  const [detailFlashing, setDetailFlashing] = useState(false);
   useEffect(() => {
     if (selectedSession) {
       setDetailMounted(false);
@@ -489,11 +488,9 @@ export default function Index() {
             return newEvt;
           });
           const updated = { ...incoming, events: mergedEvents };
-          // If this session is open in the detail panel, update it live + flash
+          // If this session is open in the detail panel, update it live
           if (selectedSessionRef.current?.id === incoming.id) {
             setSelectedSession(updated);
-            setDetailFlashing(true);
-            setTimeout(() => setDetailFlashing(false), 700);
           }
           return prev.map((s) => (s.id === incoming.id ? updated : s));
         } else {
@@ -835,12 +832,11 @@ export default function Index() {
               </button>
 
               <div style={{
-                background: detailFlashing ? "#fffbef" : "#ffffff",
+                background: "#ffffff",
                 border: "1px solid #e3e3e3",
                 borderRadius: "8px",
                 padding: "20px",
-                boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
-                transition: detailFlashing ? "none" : "background-color 0.7s ease"
+                boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
               }}>
                 {/* Session Header */}
                 <div style={{ marginBottom: "20px", borderBottom: "1px solid #e3e3e3", paddingBottom: "16px" }}>
@@ -860,20 +856,21 @@ export default function Index() {
                     )}
                   </h2>
                   <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                    <span style={{
+                    <span key={getStatusBadge(selectedSession).label} style={{
                       display: "inline-block",
                       width: "8px",
                       height: "8px",
                       borderRadius: "50%",
-                      background: getStatusBadge(selectedSession).color
+                      background: getStatusBadge(selectedSession).color,
+                      animation: "clFade 0.4s ease"
                     }} />
-                    <span style={{ fontSize: "13px", color: "#6d7175" }}>
+                    <span key={`lbl-${getStatusBadge(selectedSession).label}`} style={{ fontSize: "13px", color: "#6d7175", animation: "clFade 0.4s ease" }}>
                       {getStatusBadge(selectedSession).label}
                     </span>
                     {getTimeInCart(selectedSession) && (
                       <>
                         <span style={{ fontSize: "13px", color: "#6d7175" }}>•</span>
-                        <span style={{ fontSize: "13px", color: "#6d7175" }}>
+                        <span key={getTimeInCart(selectedSession)!} style={{ fontSize: "13px", color: "#6d7175", animation: "clFade 0.4s ease" }}>
                           Cart age: {getTimeInCart(selectedSession)}
                         </span>
                       </>
@@ -914,7 +911,7 @@ export default function Index() {
                     </div>
                   </div>
                   {selectedSession.customerEmail && (
-                    <div>
+                    <div key={selectedSession.customerEmail} style={{ animation: "clFade 0.4s ease" }}>
                       <div style={{ fontSize: "12px", color: "#6d7175", marginBottom: "4px" }}>Email</div>
                       <div style={{ fontSize: "14px", color: "#202223", wordBreak: "break-all" }}>
                         {selectedSession.customerEmail}
@@ -939,7 +936,7 @@ export default function Index() {
                   )}
                   <div>
                     <div style={{ fontSize: "12px", color: "#6d7175", marginBottom: "4px" }}>Cart Total</div>
-                    <div style={{ fontSize: "14px", color: "#202223", fontWeight: 600 }}>
+                    <div key={selectedSession.cartTotal} style={{ fontSize: "14px", color: "#202223", fontWeight: 600, animation: "clFade 0.4s ease" }}>
                       {selectedSession.totalDiscounts > 0 ? (
                         <>
                           <span style={{ textDecoration: "line-through", color: "#8c9196", fontWeight: 400, marginRight: "6px" }}>
@@ -954,7 +951,7 @@ export default function Index() {
                   </div>
                   <div>
                     <div style={{ fontSize: "12px", color: "#6d7175", marginBottom: "4px" }}>Items</div>
-                    <div style={{ fontSize: "14px", color: "#202223", fontWeight: 600 }}>
+                    <div key={selectedSession.itemCount} style={{ fontSize: "14px", color: "#202223", fontWeight: 600, animation: "clFade 0.4s ease" }}>
                       {selectedSession.itemCount}
                     </div>
                   </div>
@@ -1015,7 +1012,8 @@ export default function Index() {
                           padding: "12px",
                           background: rowBg,
                           borderRadius: "4px",
-                          border: rowBorder
+                          border: rowBorder,
+                          animation: "clFade 0.4s ease"
                         }}
                       >
                         <div style={{
