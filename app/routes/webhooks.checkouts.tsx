@@ -56,15 +56,24 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const updates: any = { checkoutStarted: true };
 
   // If customer info is available in checkout, capture it
+  // Pull from all available sources so we capture data regardless of checkout step order
   if (payload.customer?.id) {
     updates.customerId = String(payload.customer.id);
   }
-  if (payload.email) {
-    updates.customerEmail = payload.email;
-  }
-  if (payload.customer?.first_name || payload.customer?.last_name) {
-    const name = [payload.customer.first_name, payload.customer.last_name].filter(Boolean).join(" ");
-    if (name) updates.customerName = name;
+
+  // Email: payload.email (contact step) falls back to customer.email
+  const email = payload.email || payload.customer?.email;
+  if (email) updates.customerEmail = email;
+
+  // Name: customer object → billing address → shipping address
+  // shipping_address.first/last_name is populated as soon as shipping step is filled,
+  // often before payload.customer reflects it
+  const nameFromCustomer = [payload.customer?.first_name, payload.customer?.last_name].filter(Boolean).join(" ");
+  const nameFromBilling = [payload.billing_address?.first_name, payload.billing_address?.last_name].filter(Boolean).join(" ");
+  const nameFromShipping = [payload.shipping_address?.first_name, payload.shipping_address?.last_name].filter(Boolean).join(" ");
+  const resolvedName = nameFromCustomer || nameFromBilling || nameFromShipping;
+  if (resolvedName && (!cartSession.customerName || resolvedName.length > cartSession.customerName.length)) {
+    updates.customerName = resolvedName;
   }
 
   // Discount codes
