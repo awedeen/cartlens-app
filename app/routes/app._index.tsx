@@ -395,6 +395,8 @@ export default function Index() {
   const [activeTab, setActiveTab] = useState<"live" | "reports" | "settings">("live");
   const [sessions, setSessions] = useState<SessionWithMeta[]>(data.sessions);
   const [selectedSession, setSelectedSession] = useState<SessionWithMeta | null>(null);
+  const selectedSessionRef = useRef<SessionWithMeta | null>(null);
+  useEffect(() => { selectedSessionRef.current = selectedSession; }, [selectedSession]);
   const eventSourceRef = useRef<EventSource | null>(null);
   const [flashIds, setFlashIds] = useState<Set<string>>(new Set());
   const [mounted, setMounted] = useState(false);
@@ -467,7 +469,12 @@ export default function Index() {
             }
             return newEvt;
           });
-          return prev.map((s) => (s.id === incoming.id ? { ...incoming, events: mergedEvents } : s));
+          const updated = { ...incoming, events: mergedEvents };
+          // If this session is open in the detail panel, update it live
+          if (selectedSessionRef.current?.id === incoming.id) {
+            setSelectedSession(updated);
+          }
+          return prev.map((s) => (s.id === incoming.id ? updated : s));
         } else {
           return [incoming, ...prev];
         }
