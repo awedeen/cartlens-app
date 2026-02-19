@@ -505,13 +505,50 @@ export default function Index() {
 
   const getEventIcon = (eventType: string) => {
     switch (eventType) {
-      case "cart_add": return "+";
-      case "cart_remove": return "−";
-      case "checkout_started": return "●";
-      case "checkout_completed": return "✓";
-      case "checkout_item": return "○";
-      case "page_view": return "→";
-      default: return "•";
+      case "cart_add":
+        return (
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+            <rect x="6" y="1" width="2" height="12" rx="1"/>
+            <rect x="1" y="6" width="12" height="2" rx="1"/>
+          </svg>
+        );
+      case "cart_remove":
+        return (
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+            <rect x="1" y="6" width="12" height="2" rx="1"/>
+          </svg>
+        );
+      case "checkout_started":
+        return (
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="7" cy="7" r="5.5"/>
+          </svg>
+        );
+      case "checkout_completed":
+        return (
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
+            <polyline points="1.5,7 5,10.5 12.5,3.5"/>
+          </svg>
+        );
+      case "checkout_item":
+        return (
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="7" cy="7" r="4.5"/>
+          </svg>
+        );
+      case "page_view":
+        return (
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
+            <line x1="2" y1="7" x2="12" y2="7"/>
+            <polyline points="8,3 12,7 8,11"/>
+          </svg>
+        );
+      default:
+        return (
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="7" cy="7" r="3"/>
+          </svg>
+        );
     }
   };
 
