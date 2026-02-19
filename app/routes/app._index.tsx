@@ -1483,11 +1483,56 @@ export default function Index() {
                     color: "#202223"
                   }}
                 >
-                  <option value="UTC">UTC</option>
-                  <option value="America/New_York">Eastern Time</option>
-                  <option value="America/Chicago">Central Time</option>
-                  <option value="America/Denver">Mountain Time</option>
-                  <option value="America/Los_Angeles">Pacific Time</option>
+                  <optgroup label="UTC">
+                    <option value="UTC">UTC (Coordinated Universal Time)</option>
+                  </optgroup>
+                  <optgroup label="North America">
+                    <option value="America/New_York">Eastern Time (ET)</option>
+                    <option value="America/Chicago">Central Time (CT)</option>
+                    <option value="America/Denver">Mountain Time (MT)</option>
+                    <option value="America/Los_Angeles">Pacific Time (PT)</option>
+                    <option value="America/Anchorage">Alaska Time (AKT)</option>
+                    <option value="Pacific/Honolulu">Hawaii Time (HT)</option>
+                    <option value="America/Toronto">Toronto (ET)</option>
+                    <option value="America/Vancouver">Vancouver (PT)</option>
+                    <option value="America/Mexico_City">Mexico City (CT)</option>
+                  </optgroup>
+                  <optgroup label="South America">
+                    <option value="America/Sao_Paulo">São Paulo (BRT)</option>
+                    <option value="America/Argentina/Buenos_Aires">Buenos Aires (ART)</option>
+                    <option value="America/Bogota">Bogotá (COT)</option>
+                  </optgroup>
+                  <optgroup label="Europe">
+                    <option value="Europe/London">London (GMT/BST)</option>
+                    <option value="Europe/Paris">Paris (CET/CEST)</option>
+                    <option value="Europe/Berlin">Berlin (CET/CEST)</option>
+                    <option value="Europe/Amsterdam">Amsterdam (CET/CEST)</option>
+                    <option value="Europe/Madrid">Madrid (CET/CEST)</option>
+                    <option value="Europe/Rome">Rome (CET/CEST)</option>
+                    <option value="Europe/Stockholm">Stockholm (CET/CEST)</option>
+                    <option value="Europe/Warsaw">Warsaw (CET/CEST)</option>
+                    <option value="Europe/Kiev">Kyiv (EET/EEST)</option>
+                    <option value="Europe/Istanbul">Istanbul (TRT)</option>
+                  </optgroup>
+                  <optgroup label="Middle East & Africa">
+                    <option value="Asia/Dubai">Dubai (GST)</option>
+                    <option value="Asia/Riyadh">Riyadh (AST)</option>
+                    <option value="Africa/Cairo">Cairo (EET)</option>
+                    <option value="Africa/Johannesburg">Johannesburg (SAST)</option>
+                    <option value="Africa/Lagos">Lagos (WAT)</option>
+                  </optgroup>
+                  <optgroup label="Asia & Pacific">
+                    <option value="Asia/Kolkata">India (IST)</option>
+                    <option value="Asia/Dhaka">Dhaka (BST)</option>
+                    <option value="Asia/Bangkok">Bangkok (ICT)</option>
+                    <option value="Asia/Singapore">Singapore (SGT)</option>
+                    <option value="Asia/Shanghai">China (CST)</option>
+                    <option value="Asia/Tokyo">Tokyo (JST)</option>
+                    <option value="Asia/Seoul">Seoul (KST)</option>
+                    <option value="Australia/Sydney">Sydney (AEST/AEDT)</option>
+                    <option value="Australia/Melbourne">Melbourne (AEST/AEDT)</option>
+                    <option value="Pacific/Auckland">Auckland (NZST/NZDT)</option>
+                  </optgroup>
                 </select>
               </div>
 
