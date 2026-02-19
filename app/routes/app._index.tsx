@@ -478,17 +478,15 @@ export default function Index() {
   };
 
   const getVisitorName = (session: CartSession) => {
-    if (session.customerName) return session.customerName;
-    if (session.city && session.countryCode) {
-      return `Anonymous - ${session.city}, ${session.countryCode}`;
-    }
-    if (session.countryCode) {
-      return `Anonymous - ${session.countryCode}`;
-    }
-    if (session.city) {
-      return `Anonymous - ${session.city}`;
-    }
-    return "Anonymous Visitor";
+    const location = session.city && session.countryCode
+      ? ` — ${session.city}, ${session.countryCode}`
+      : session.countryCode
+        ? ` — ${session.countryCode}`
+        : session.city
+          ? ` — ${session.city}`
+          : "";
+    if (session.customerName) return `${session.customerName}${location}`;
+    return `Anonymous Visitor${location}`;
   };
 
   const getStatusBadge = (session: CartSession) => {
