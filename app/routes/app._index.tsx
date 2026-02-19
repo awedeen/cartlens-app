@@ -734,6 +734,14 @@ export default function Index() {
                       {selectedSession.deviceType || "Unknown"} • {selectedSession.browser || "Unknown"}
                     </div>
                   </div>
+                  {selectedSession.customerEmail && (
+                    <div>
+                      <div style={{ fontSize: "12px", color: "#6d7175", marginBottom: "4px" }}>Email</div>
+                      <div style={{ fontSize: "14px", color: "#202223", wordBreak: "break-all" }}>
+                        {selectedSession.customerEmail}
+                      </div>
+                    </div>
+                  )}
                   {selectedSession.referrerUrl && (
                     <div>
                       <div style={{ fontSize: "12px", color: "#6d7175", marginBottom: "4px" }}>Referrer</div>
