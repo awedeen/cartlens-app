@@ -719,7 +719,13 @@ export default function Index() {
                   <div>
                     <div style={{ fontSize: "12px", color: "#6d7175", marginBottom: "4px" }}>Location</div>
                     <div style={{ fontSize: "14px", color: "#202223" }}>
-                      {selectedSession.city}, {selectedSession.country} {selectedSession.countryCode && `(${selectedSession.countryCode})`}
+                      {(() => {
+                        const parts = [selectedSession.city, selectedSession.country].filter(Boolean);
+                        const code = selectedSession.countryCode;
+                        if (parts.length > 0) return `${parts.join(", ")}${code && !selectedSession.country ? ` (${code})` : ""}`;
+                        if (code) return code;
+                        return "Unknown";
+                      })()}
                     </div>
                   </div>
                   <div>
