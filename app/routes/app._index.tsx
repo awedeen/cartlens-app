@@ -719,8 +719,8 @@ export default function Index() {
             label: (
               <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                 <span style={{
-                  width: "7px",
-                  height: "7px",
+                  width: "8px",
+                  height: "8px",
                   borderRadius: "50%",
                   background: "#008060",
                   display: "inline-block",
@@ -1655,20 +1655,16 @@ export default function Index() {
             marginTop: "20px",
             boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
           }}>
-            <h3 style={{ fontSize: "16px", fontWeight: 600, color: "#202223", marginBottom: "8px" }}>
-              Web Pixel
-            </h3>
-            <div style={{ fontSize: "14px", color: "#6d7175", marginBottom: "16px" }}>
-              {data.pixelInstalled || fetcher.data?.pixelInstalled
-                ? "Web Pixel is active and tracking customer behavior."
-                : "Web Pixel is not installed. Install it to track cart activity and device data."}
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+            {/* Header row: title + status indicator */}
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
+              <h3 style={{ fontSize: "16px", fontWeight: 600, color: "#202223", margin: 0 }}>
+                Web Pixel
+              </h3>
               <span style={{
                 display: "inline-flex",
                 alignItems: "center",
-                gap: "6px",
-                fontSize: "13px",
+                gap: "5px",
+                fontSize: "12px",
                 fontWeight: 600,
                 color: data.pixelInstalled || fetcher.data?.pixelInstalled ? "#008060" : "#d82c0d"
               }}>
@@ -1681,6 +1677,15 @@ export default function Index() {
                 }} />
                 {data.pixelInstalled || fetcher.data?.pixelInstalled ? "Active" : "Not installed"}
               </span>
+            </div>
+
+            <div style={{ fontSize: "14px", color: "#6d7175", marginBottom: "16px" }}>
+              {data.pixelInstalled || fetcher.data?.pixelInstalled
+                ? "Web Pixel is active and tracking customer behavior."
+                : "Web Pixel is not installed. Install it to track cart activity and device data."}
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
               <fetcher.Form method="post">
                 <input type="hidden" name="action" value="installPixel" />
                 <button
