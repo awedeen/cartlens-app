@@ -7,11 +7,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   console.log(`Received ${topic} webhook for ${shop}`);
 
-  // Webhook requests can trigger multiple times and after an app has already been uninstalled.
-  // If this webhook already ran, the session may have been deleted previously.
+  // Delete OAuth sessions (idempotent — webhook may fire multiple times)
   if (session) {
     await db.session.deleteMany({ where: { shop } });
   }
+
+  // Delete all shop data — CartSessions and CartEvents cascade automatically
+  // via the Shop → CartSession → CartEvent FK cascade chain.
+  await db.shop.deleteMany({ where: { shopifyDomain: shop } });
 
   return new Response();
 };

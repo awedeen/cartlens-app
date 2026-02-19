@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { SaveBar } from "@shopify/app-bridge-react";
 import type {
   ActionFunctionArgs,
   HeadersFunction,
@@ -398,6 +399,23 @@ export default function Index() {
   const [timezone, setTimezone] = useState<string>(data.settings.timezone);
   const [cartlinkEnabled, setCartlinkEnabled] = useState<boolean>(data.settings.cartlinkEnabled);
   const [botFilterEnabled, setBotFilterEnabled] = useState<boolean>(data.settings.botFilterEnabled);
+
+  // Track saved state for CSB dirty detection + discard
+  const [savedSettings, setSavedSettings] = useState({
+    timezone: data.settings.timezone,
+    cartlinkEnabled: data.settings.cartlinkEnabled,
+    botFilterEnabled: data.settings.botFilterEnabled,
+  });
+  const isSettingsDirty =
+    timezone !== savedSettings.timezone ||
+    cartlinkEnabled !== savedSettings.cartlinkEnabled ||
+    botFilterEnabled !== savedSettings.botFilterEnabled;
+
+  const handleDiscardSettings = () => {
+    setTimezone(savedSettings.timezone);
+    setCartlinkEnabled(savedSettings.cartlinkEnabled);
+    setBotFilterEnabled(savedSettings.botFilterEnabled);
+  };
   const [reportRange, setReportRange] = useState<7 | 30 | 90>(30);
 
   // Connect to SSE for real-time updates
@@ -633,8 +651,8 @@ export default function Index() {
     formData.append("timezone", timezone);
     formData.append("cartlinkEnabled", cartlinkEnabled ? "true" : "false");
     formData.append("botFilterEnabled", botFilterEnabled ? "true" : "false");
-    
     fetcher.submit(formData, { method: "POST" });
+    setSavedSettings({ timezone, cartlinkEnabled, botFilterEnabled });
   };
 
   // Compute report stats client-side from loaded sessions, filtered by reportRange
@@ -674,6 +692,12 @@ export default function Index() {
 
   return (
     <s-page title="CartLens">
+      {/* Contextual Save Bar — shown when Settings tab has unsaved changes */}
+      <SaveBar open={isSettingsDirty}>
+        <button variant="primary" onClick={handleSaveSettings}>Save</button>
+        <button onClick={handleDiscardSettings}>Discard</button>
+      </SaveBar>
+
       {/* Tab Navigation */}
       <div style={{ 
         marginBottom: "20px",
@@ -1501,31 +1525,7 @@ export default function Index() {
                 </label>
               </div>
 
-              {/* Save Button */}
-              <div>
-                <button
-                  onClick={handleSaveSettings}
-                  disabled={fetcher.state === "submitting"}
-                  style={{
-                    background: "#008060",
-                    color: "#ffffff",
-                    border: "none",
-                    padding: "10px 16px",
-                    borderRadius: "4px",
-                    fontSize: "14px",
-                    fontWeight: 600,
-                    cursor: fetcher.state === "submitting" ? "not-allowed" : "pointer",
-                    opacity: fetcher.state === "submitting" ? 0.6 : 1
-                  }}
-                >
-                  {fetcher.state === "submitting" ? "Saving..." : "Save Settings"}
-                </button>
-                {fetcher.data?.success && (
-                  <span style={{ marginLeft: "12px", fontSize: "13px", color: "#008060" }}>
-                    Settings saved successfully
-                  </span>
-                )}
-              </div>
+              {/* Settings saved via Contextual Save Bar (above) */}
             </div>
           </div>
 
