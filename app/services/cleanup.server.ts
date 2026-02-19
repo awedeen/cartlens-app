@@ -1,9 +1,10 @@
-import cron from "node-cron";
 import prisma from "../db.server";
 
 /**
  * Deletes CartSessions (and cascading CartEvents) older than each shop's retentionDays.
  * Returns a summary of what was deleted for logging.
+ *
+ * Called by scripts/cleanup.ts — triggered externally (Railway Cron, manual, etc.)
  */
 export async function runCleanup(): Promise<{ shop: string; deleted: number }[]> {
   const shops = await prisma.shop.findMany({
@@ -34,25 +35,4 @@ export async function runCleanup(): Promise<{ shop: string; deleted: number }[]>
   console.log(`[Cleanup] Done — ${totalDeleted} total session(s) deleted across ${shops.length} shop(s)`);
 
   return results;
-}
-
-/**
- * Starts the daily cleanup cron. Uses a global guard so it only initializes once
- * even in hot-reload environments.
- */
-export function startCleanupCron(): void {
-  if ((global as any).__cleanupCronStarted) return;
-  (global as any).__cleanupCronStarted = true;
-
-  // Run daily at 2:00 AM UTC
-  cron.schedule("0 2 * * *", async () => {
-    console.log("[Cleanup] Running scheduled data retention cleanup...");
-    try {
-      await runCleanup();
-    } catch (err) {
-      console.error("[Cleanup] Error during cleanup:", err);
-    }
-  }, { timezone: "UTC" });
-
-  console.log("[Cleanup] Cron scheduled — daily at 2:00 AM UTC");
 }
