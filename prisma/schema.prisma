@@ -40,7 +40,7 @@ model Shop {
   shopifyDomain   String   @unique
   timezone        String   @default("America/Los_Angeles")
   retentionDays   Int      @default(90)
-  cartlinkEnabled Boolean  @default(false)
+  highValueThreshold Float?
   botFilterEnabled Boolean @default(false)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt

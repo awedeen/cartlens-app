@@ -44,8 +44,8 @@ interface LoaderData {
   settings: {
     timezone: string;
     retentionDays: number;
-    cartlinkEnabled: boolean;
     botFilterEnabled: boolean;
+    highValueThreshold: number | null;
   };
 }
 
@@ -306,8 +306,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     settings: {
       timezone: shop.timezone,
       retentionDays: shop.retentionDays,
-      cartlinkEnabled: shop.cartlinkEnabled,
       botFilterEnabled: shop.botFilterEnabled,
+      highValueThreshold: shop.highValueThreshold,
     },
   });
 };
@@ -373,12 +373,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   if (action === "updateSettings") {
     const timezone = formData.get("timezone") as string;
-    const cartlinkEnabled = formData.get("cartlinkEnabled") === "true";
     const botFilterEnabled = formData.get("botFilterEnabled") === "true";
+    const rawThreshold = formData.get("highValueThreshold") as string;
+    const highValueThreshold = rawThreshold && rawThreshold !== "" ? parseFloat(rawThreshold) : null;
 
     await prisma.shop.update({
       where: { id: shop.id },
-      data: { timezone, cartlinkEnabled, botFilterEnabled },
+      data: { timezone, botFilterEnabled, highValueThreshold },
     });
 
     return data({ success: true });
@@ -398,24 +399,26 @@ export default function Index() {
   
   // Settings form state
   const [timezone, setTimezone] = useState<string>(data.settings.timezone);
-  const [cartlinkEnabled, setCartlinkEnabled] = useState<boolean>(data.settings.cartlinkEnabled);
   const [botFilterEnabled, setBotFilterEnabled] = useState<boolean>(data.settings.botFilterEnabled);
+  const [highValueThreshold, setHighValueThreshold] = useState<string>(
+    data.settings.highValueThreshold != null ? String(data.settings.highValueThreshold) : ""
+  );
 
   // Track saved state for CSB dirty detection + discard
   const [savedSettings, setSavedSettings] = useState({
     timezone: data.settings.timezone,
-    cartlinkEnabled: data.settings.cartlinkEnabled,
     botFilterEnabled: data.settings.botFilterEnabled,
+    highValueThreshold: data.settings.highValueThreshold != null ? String(data.settings.highValueThreshold) : "",
   });
   const isSettingsDirty =
     timezone !== savedSettings.timezone ||
-    cartlinkEnabled !== savedSettings.cartlinkEnabled ||
-    botFilterEnabled !== savedSettings.botFilterEnabled;
+    botFilterEnabled !== savedSettings.botFilterEnabled ||
+    highValueThreshold !== savedSettings.highValueThreshold;
 
   const handleDiscardSettings = () => {
     setTimezone(savedSettings.timezone);
-    setCartlinkEnabled(savedSettings.cartlinkEnabled);
     setBotFilterEnabled(savedSettings.botFilterEnabled);
+    setHighValueThreshold(savedSettings.highValueThreshold);
   };
   const [reportRange, setReportRange] = useState<7 | 30 | 90>(30);
 
@@ -650,10 +653,10 @@ export default function Index() {
     const formData = new FormData();
     formData.append("action", "updateSettings");
     formData.append("timezone", timezone);
-    formData.append("cartlinkEnabled", cartlinkEnabled ? "true" : "false");
     formData.append("botFilterEnabled", botFilterEnabled ? "true" : "false");
+    formData.append("highValueThreshold", highValueThreshold);
     settingsFetcher.submit(formData, { method: "POST" });
-    setSavedSettings({ timezone, cartlinkEnabled, botFilterEnabled });
+    setSavedSettings({ timezone, botFilterEnabled, highValueThreshold });
   };
 
   // Compute report stats client-side from loaded sessions, filtered by reportRange
@@ -1167,6 +1170,21 @@ export default function Index() {
                                 Visit #{session.visitNumber}
                               </span>
                             )}
+                            {data.settings.highValueThreshold != null &&
+                              session.cartTotal >= data.settings.highValueThreshold &&
+                              session.cartTotal > 0 && (
+                              <span style={{
+                                fontSize: "11px",
+                                fontWeight: 600,
+                                color: "#ffffff",
+                                background: "#007a5a",
+                                padding: "1px 6px",
+                                borderRadius: "3px",
+                                flexShrink: 0
+                              }}>
+                                High Value
+                              </span>
+                            )}
                           </div>
                           <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0, whiteSpace: "nowrap" }}>
                             {getTimeInCart(session) && (
@@ -1574,6 +1592,36 @@ export default function Index() {
                     </div>
                   </div>
                 </label>
+              </div>
+
+              {/* High Value Cart Threshold */}
+              <div>
+                <label style={{ display: "block", marginBottom: "8px", fontSize: "14px", fontWeight: 600, color: "#202223" }}>
+                  High Value Cart Threshold
+                </label>
+                <div style={{ fontSize: "13px", color: "#6d7175", marginBottom: "8px" }}>
+                  Carts above this value are highlighted in the live view. Leave blank to disable.
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <span style={{ fontSize: "14px", color: "#202223" }}>$</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    placeholder="e.g. 150"
+                    value={highValueThreshold}
+                    onChange={(e) => setHighValueThreshold(e.target.value)}
+                    style={{
+                      width: "120px",
+                      padding: "8px 12px",
+                      fontSize: "14px",
+                      border: "1px solid #e3e3e3",
+                      borderRadius: "4px",
+                      background: "#ffffff",
+                      color: "#202223"
+                    }}
+                  />
+                </div>
               </div>
 
               {/* Settings saved via Contextual Save Bar (above) */}
