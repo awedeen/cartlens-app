@@ -9,6 +9,28 @@ import { detectBot } from "../services/bot.server";
 // Geo now handled via Cloudflare headers — no external API needed
 import sseManager from "../services/sse.server";
 
+function parseUserAgent(ua: string | null): { browser: string | null; os: string | null } {
+  if (!ua) return { browser: null, os: null };
+
+  let browser: string | null = null;
+  if (/Edg\//i.test(ua)) browser = "Edge";
+  else if (/SamsungBrowser/i.test(ua)) browser = "Samsung Browser";
+  else if (/OPR\/|Opera/i.test(ua)) browser = "Opera";
+  else if (/Firefox\//i.test(ua)) browser = "Firefox";
+  else if (/Chrome\//i.test(ua)) browser = "Chrome";
+  else if (/Safari\//i.test(ua) && /Version\//i.test(ua)) browser = "Safari";
+
+  let os: string | null = null;
+  if (/iPhone|iPad|iPod/i.test(ua)) os = "iOS";
+  else if (/Android/i.test(ua)) os = "Android";
+  else if (/Windows NT/i.test(ua)) os = "Windows";
+  else if (/Mac OS X/i.test(ua)) os = "macOS";
+  else if (/Linux/i.test(ua)) os = "Linux";
+  else if (/CrOS/i.test(ua)) os = "Chrome OS";
+
+  return { browser, os };
+}
+
 export const action = async ({ request }: ActionFunctionArgs) => {
   if (request.method !== "POST") {
     return data({ error: "Method not allowed" }, { status: 405 });
@@ -98,6 +120,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     const countryCode = (cfCountry && cfCountry !== "XX") ? cfCountry : (billingCountryCode || null);
     const resolvedIP = cfIP || ipAddress || null;
 
+    // Parse browser and OS from user agent
+    const parsedUA = parseUserAgent(userAgent || null);
+    const resolvedBrowser = browser || parsedUA.browser;
+    const resolvedOS = os || parsedUA.os;
+
     // Find or create CartSession
     let cartSession = await prisma.cartSession.findFirst({
       where: {
@@ -125,8 +152,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           country,
           countryCode,
           deviceType,
-          browser,
-          os,
+          browser: resolvedBrowser,
+          os: resolvedOS,
           userAgent,
           isSuspectedBot,
           botReason: isSuspectedBot ? botDetection.reason : null,
