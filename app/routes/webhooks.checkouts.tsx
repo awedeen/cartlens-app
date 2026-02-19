@@ -76,11 +76,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     updates.customerName = resolvedName;
   }
 
-  // Discount codes
+  // Discount codes — deduplicate by code value (Shopify can send the same code twice if reapplied)
   const discountCodes = payload.discount_codes || [];
-  console.log(`[Checkout Webhook] discount_codes:`, JSON.stringify(discountCodes));
-  if (discountCodes.length > 0) {
-    updates.discountCodes = JSON.stringify(discountCodes);
+  const uniqueDiscountCodes = discountCodes.filter(
+    (dc: any, idx: number, arr: any[]) => arr.findIndex((d: any) => d.code === dc.code) === idx
+  );
+  console.log(`[Checkout Webhook] discount_codes:`, JSON.stringify(uniqueDiscountCodes));
+  if (uniqueDiscountCodes.length > 0) {
+    updates.discountCodes = JSON.stringify(uniqueDiscountCodes);
   }
 
   // Geo from billing or shipping address
