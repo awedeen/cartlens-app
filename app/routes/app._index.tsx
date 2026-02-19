@@ -1426,10 +1426,24 @@ export default function Index() {
             <div style={{ fontSize: "14px", color: "#6d7175", marginBottom: "16px" }}>
               Export all cart session data to CSV for analysis
             </div>
-            <a
-              href="/app/api/export"
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              onClick={async () => {
+                try {
+                  const res = await fetch("/app/api/export");
+                  if (!res.ok) throw new Error("Export failed");
+                  const blob = await res.blob();
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `cartlens-export-${new Date().toISOString().split("T")[0]}.csv`;
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                  URL.revokeObjectURL(url);
+                } catch (e) {
+                  alert("Export failed. Please try again.");
+                }
+              }}
               style={{
                 display: "inline-block",
                 background: "#ffffff",
@@ -1439,12 +1453,11 @@ export default function Index() {
                 borderRadius: "4px",
                 fontSize: "14px",
                 fontWeight: 600,
-                textDecoration: "none",
                 cursor: "pointer"
               }}
             >
               Download CSV
-            </a>
+            </button>
           </div>
 
           {/* Pixel Status */}
