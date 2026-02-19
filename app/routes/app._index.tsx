@@ -396,6 +396,18 @@ export default function Index() {
   const [sessions, setSessions] = useState<SessionWithMeta[]>(data.sessions);
   const [selectedSession, setSelectedSession] = useState<SessionWithMeta | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
+  const [flashIds, setFlashIds] = useState<Set<string>>(new Set());
+
+  const triggerFlash = (id: string) => {
+    setFlashIds(prev => new Set([...prev, id]));
+    setTimeout(() => {
+      setFlashIds(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }, 700);
+  };
   
   // Settings form state
   const [timezone, setTimezone] = useState<string>(data.settings.timezone);
@@ -438,6 +450,8 @@ export default function Index() {
     eventSource.addEventListener("cart-update", (e) => {
       const update = JSON.parse(e.data);
       console.log("[SSE Client] Received cart-update:", update);
+
+      triggerFlash(update.session?.id);
 
       setSessions((prev) => {
         const incoming = update.session;
@@ -1131,17 +1145,18 @@ export default function Index() {
                       .filter((v, i, a) => a.indexOf(v) === i)
                       .slice(0, 4);
 
+                    const isFlashing = flashIds.has(session.id);
                     return (
                       <div
                         key={session.id}
                         onClick={() => setSelectedSession(session)}
                         style={{
-                          background: "#ffffff",
+                          background: isFlashing ? "#fffbef" : "#ffffff",
                           border: "1px solid #e3e3e3",
                           borderRadius: "8px",
                           padding: "16px",
                           cursor: "pointer",
-                          transition: "background 0.2s, box-shadow 0.2s",
+                          transition: isFlashing ? "none" : "background-color 0.7s ease, box-shadow 0.2s",
                           boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
                         }}
                         onMouseEnter={(e) => {
