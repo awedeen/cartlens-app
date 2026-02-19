@@ -419,6 +419,25 @@ export default function Index() {
   };
   const [reportRange, setReportRange] = useState<7 | 30 | 90>(30);
 
+  // Inject breathing animation keyframes into document head (style tags in JSX are filtered by Shopify iframe)
+  useEffect(() => {
+    const id = "cartlens-keyframes";
+    if (!document.getElementById(id)) {
+      const style = document.createElement("style");
+      style.id = id;
+      style.textContent = `
+        @keyframes liveBreathe {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.45; transform: scale(0.75); }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+    return () => {
+      document.getElementById(id)?.remove();
+    };
+  }, []);
+
   // Connect to SSE for real-time updates
   useEffect(() => {
     console.log("[SSE Client] Connecting to SSE endpoint for shopId:", data.shopId);
@@ -693,13 +712,6 @@ export default function Index() {
 
   return (
     <s-page title="CartLens">
-      <style>{`
-        @keyframes liveBreathe {
-          0%, 100% { opacity: 1; transform: scale(1); box-shadow: 0 0 0 0 rgba(0, 128, 96, 0.5); }
-          50% { opacity: 0.7; transform: scale(0.82); box-shadow: 0 0 0 4px rgba(0, 128, 96, 0); }
-        }
-      `}</style>
-
       {/* Contextual Save Bar — shown when Settings tab has unsaved changes */}
       <SaveBar open={isSettingsDirty}>
         <button variant="primary" onClick={handleSaveSettings}>Save</button>
@@ -1557,16 +1569,6 @@ export default function Index() {
                     <option value="Pacific/Auckland">Auckland (NZST/NZDT)</option>
                   </optgroup>
                 </select>
-              </div>
-
-              {/* Data Retention */}
-              <div style={{ paddingBottom: "20px", borderBottom: "1px solid #e3e3e3" }}>
-                <label style={{ display: "block", marginBottom: "8px", fontSize: "14px", fontWeight: 600, color: "#202223" }}>
-                  Data Retention
-                </label>
-                <div style={{ fontSize: "13px", color: "#6d7175" }}>
-                  Cart data is retained for {data.settings.retentionDays} days
-                </div>
               </div>
 
               {/* Bot Filter */}
