@@ -1410,6 +1410,74 @@ export default function Index() {
               Download CSV
             </a>
           </div>
+
+          {/* Pixel Status */}
+          <div style={{
+            background: "#ffffff",
+            border: "1px solid #e3e3e3",
+            borderRadius: "8px",
+            padding: "20px",
+            marginTop: "20px",
+            boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
+          }}>
+            <h3 style={{ fontSize: "16px", fontWeight: 600, color: "#202223", marginBottom: "8px" }}>
+              Web Pixel
+            </h3>
+            <div style={{ fontSize: "14px", color: "#6d7175", marginBottom: "16px" }}>
+              {data.pixelInstalled || fetcher.data?.pixelInstalled
+                ? "Web Pixel is active and tracking customer behavior."
+                : "Web Pixel is not installed. Install it to track cart activity and device data."}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+              <span style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                fontSize: "13px",
+                fontWeight: 600,
+                color: data.pixelInstalled || fetcher.data?.pixelInstalled ? "#008060" : "#d82c0d"
+              }}>
+                <span style={{
+                  width: "8px",
+                  height: "8px",
+                  borderRadius: "50%",
+                  background: data.pixelInstalled || fetcher.data?.pixelInstalled ? "#008060" : "#d82c0d",
+                  display: "inline-block"
+                }} />
+                {data.pixelInstalled || fetcher.data?.pixelInstalled ? "Active" : "Not installed"}
+              </span>
+              <fetcher.Form method="post">
+                <input type="hidden" name="action" value="installPixel" />
+                <button
+                  type="submit"
+                  disabled={fetcher.state === "submitting"}
+                  style={{
+                    background: data.pixelInstalled || fetcher.data?.pixelInstalled ? "#ffffff" : "#008060",
+                    color: data.pixelInstalled || fetcher.data?.pixelInstalled ? "#202223" : "#ffffff",
+                    border: "1px solid #e3e3e3",
+                    padding: "8px 14px",
+                    borderRadius: "4px",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    cursor: fetcher.state === "submitting" ? "not-allowed" : "pointer",
+                    opacity: fetcher.state === "submitting" ? 0.6 : 1
+                  }}
+                >
+                  {fetcher.state === "submitting"
+                    ? "Installing..."
+                    : data.pixelInstalled || fetcher.data?.pixelInstalled
+                      ? "Reinstall Pixel"
+                      : "Install Pixel"}
+                </button>
+              </fetcher.Form>
+              {fetcher.data?.pixelInstalled && (
+                <span style={{ fontSize: "13px", color: "#008060" }}>Installed successfully</span>
+              )}
+              {fetcher.data?.error && (
+                <span style={{ fontSize: "13px", color: "#d82c0d" }}>Error: {fetcher.data.error}</span>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </s-page>
