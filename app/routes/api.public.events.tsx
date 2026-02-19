@@ -48,6 +48,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       userAgent,
       ipAddress,
       timestamp,
+      billingCity,
+      billingCountry,
+      billingCountryCode,
     } = payload;
 
     // Validate required fields
@@ -89,10 +92,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     const botDetection = detectBot(userAgent);
     const isSuspectedBot = shop.botFilterEnabled ? botDetection.isBot : false;
 
-    // Geo from Cloudflare headers (free, no API needed) or payload fallback
-    const city = cfCity || null;
-    const country = null; // CF doesn't give country name, just code
-    const countryCode = cfCountry && cfCountry !== "XX" ? cfCountry : null;
+    // Geo: Cloudflare headers first, fall back to billing address from checkout events
+    const city = cfCity || billingCity || null;
+    const country = billingCountry || null;
+    const countryCode = (cfCountry && cfCountry !== "XX") ? cfCountry : (billingCountryCode || null);
     const resolvedIP = cfIP || ipAddress || null;
 
     // Find or create CartSession

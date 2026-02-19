@@ -171,6 +171,9 @@ register(({ analytics, browser, settings, init }) => {
     sendEvent("checkout_started", {
       customerId: checkout?.customer?.id,
       customerEmail: checkout?.email,
+      billingCity: checkout?.billingAddress?.city || null,
+      billingCountry: checkout?.billingAddress?.country || null,
+      billingCountryCode: checkout?.billingAddress?.countryCode || null,
     });
   });
 
@@ -185,6 +188,9 @@ register(({ analytics, browser, settings, init }) => {
       customerName: checkout?.billingAddress?.firstName && checkout?.billingAddress?.lastName
         ? `${checkout.billingAddress.firstName} ${checkout.billingAddress.lastName}`
         : null,
+      billingCity: checkout?.billingAddress?.city || null,
+      billingCountry: checkout?.billingAddress?.country || null,
+      billingCountryCode: checkout?.billingAddress?.countryCode || null,
     });
   });
 
