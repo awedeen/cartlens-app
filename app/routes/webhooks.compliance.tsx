@@ -3,6 +3,7 @@ import { ActionFunctionArgs, data } from "react-router";
 import prisma from "../db.server";
 
 export const action = async ({ request }: ActionFunctionArgs) => {
+  try {
   const { topic, payload, shop } = await authenticate.webhook(request);
 
   console.log(`[Compliance Webhook] ${topic} for shop: ${shop}`);
@@ -99,7 +100,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     }
 
     default:
-      console.log(`[Compliance] Unknown topic: ${topic}`);
       return data({ success: true }, { status: 200 });
+  }
+  } catch (error) {
+    if (error instanceof Response) throw error;
+    console.error("[Compliance Webhook] Error:", error);
+    return data({ error: "Internal server error" }, { status: 500 });
   }
 };

@@ -84,10 +84,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       const sessionWithEvents = await prisma.cartSession.findUnique({
         where: { id: session.id },
         include: {
-          events: {
-            orderBy: { timestamp: "desc" },
-            take: 10,
-          },
+          events: { orderBy: { timestamp: "desc" } },
         },
       });
 

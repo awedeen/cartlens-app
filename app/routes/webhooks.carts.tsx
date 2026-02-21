@@ -14,7 +14,6 @@ async function getProductImage(shop: string, productId: string): Promise<string 
   if (imageCache.has(cacheKey)) return imageCache.get(cacheKey)!;
 
   try {
-    console.log(`[Webhook] Fetching image for product ${productId} from ${shop}`);
     const { admin } = await unauthenticated.admin(shop);
     const response = await admin.graphql(`
       query getProductImage($id: ID!) {
@@ -26,10 +25,8 @@ async function getProductImage(shop: string, productId: string): Promise<string 
       }
     `, { variables: { id: `gid://shopify/Product/${productId}` } });
     const result = await response.json();
-    console.log(`[Webhook] Image query result:`, JSON.stringify(result?.data?.product));
     const imageUrl = result?.data?.product?.featuredImage?.url || null;
     imageCache.set(cacheKey, imageUrl);
-    console.log(`[Webhook] Image for product ${productId}: ${imageUrl || "none"}`);
     return imageUrl;
   } catch (e: any) {
     console.error(`[Webhook] Failed to fetch image for product ${productId}:`, e?.message || e);
@@ -41,15 +38,6 @@ async function getProductImage(shop: string, productId: string): Promise<string 
 export const action = async ({ request }: ActionFunctionArgs) => {
   try {
     const { topic, shop, payload } = await authenticate.webhook(request);
-
-    console.log(`[Webhook] Received ${topic} from ${shop}`);
-    console.log(`[Webhook] Customer fields:`, JSON.stringify({
-      customer_id: payload.customer_id,
-      customer: payload.customer,
-      email: payload.email,
-      buyer_identity: payload.buyer_identity,
-      note: payload.note,
-    }));
 
     if (topic !== "CARTS_CREATE" && topic !== "CARTS_UPDATE") {
       return data({ error: "Invalid topic" }, { status: 400 });
@@ -104,8 +92,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
       // Create initial cart_add events
       for (const item of lineItems) {
-        console.log(`[Webhook] Line item keys:`, Object.keys(item));
-        console.log(`[Webhook] Line item image fields:`, { image: item.image, featured_image: item.featured_image, images: item.images });
         // Try webhook payload image first, fall back to API
         const webhookImage = item.featured_image?.url || item.image || null;
         const variantImage = webhookImage || await getProductImage(shop, item.product_id?.toString());
@@ -240,7 +226,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     // If no session was created/found (e.g. empty cart with no prior session), bail
     if (!session) {
-      console.log(`[Webhook] No session to update (empty cart, no prior session)`);
       return data({ success: true }, { status: 200 });
     }
 
@@ -248,23 +233,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     const sessionWithEvents = await prisma.cartSession.findUnique({
       where: { id: session.id },
       include: {
-        events: {
-          orderBy: { timestamp: "desc" },
-          take: 20,
-        },
+        events: { orderBy: { timestamp: "desc" } },
       },
     });
-
-    console.log(`[Webhook] Processed ${topic} for cart ${cartToken} — ${itemCount} items, $${cartTotal.toFixed(2)}`);
-    console.log(`[Webhook] Using SSE manager instance: ${sseManager.instanceId}`);
-    console.log(`[Webhook] Broadcasting cart-update for shop ${shopRecord.id} (${shopRecord.shopifyDomain})`);
-    console.log(`[Webhook] Current client count: ${sseManager.getClientCount(shopRecord.id)} for this shop, ${sseManager.getClientCount()} total`);
 
     sseManager.broadcast(shopRecord.id, "cart-update", {
       session: sessionWithEvents,
     });
-
-    console.log(`[Webhook] Broadcast complete`);
 
     return data({ success: true });
   } catch (error) {

@@ -2,6 +2,7 @@
 // Uses shopId from query param — only accessible within the authenticated app iframe
 
 import type { LoaderFunctionArgs } from "react-router";
+import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import sseManager from "../services/sse.server";
 
@@ -26,6 +27,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     if (!shop) {
       console.error(`[SSE Endpoint] Shop not found: ${shopId}`);
       return new Response("Shop not found", { status: 404 });
+    }
+
+    // Verify the shopId belongs to the authenticated merchant
+    const { session } = await authenticate.admin(request);
+    if (session.shop !== shop.shopifyDomain) {
+      console.error(`[SSE Endpoint] shopId mismatch: session=${session.shop}, requested=${shop.shopifyDomain}`);
+      return new Response("Forbidden", { status: 403 });
     }
 
     console.log(`[SSE Endpoint] Shop found: ${shop.shopifyDomain} (id: ${shop.id})`);
