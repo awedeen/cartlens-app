@@ -9,7 +9,7 @@ embedded = true
 redirect_urls = [ "https://cartlens-app-production.up.railway.app/auth/callback" ]
 
 [access_scopes]
-scopes = "read_products,read_orders,read_customers,write_pixels,read_customer_events"
+scopes = "read_products,read_orders,write_pixels,read_customer_events"
 
 [webhooks]
 api_version = "2025-10"
