@@ -123,13 +123,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     // Find or create Shop record
     let shop = await prisma.shop.findUnique({
       where: { shopifyDomain: safeShopDomain! },
-      include: { settings: true },
     });
 
     if (!shop) {
       shop = await prisma.shop.create({
         data: { shopifyDomain: safeShopDomain! },
-        include: { settings: true },
       });
     }
 
