@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CartLens — Real-Time Cart Activity for Shopify</title>
+  <meta name="description" content="See live cart activity, track abandonment as it happens, and understand shopper behavior with CartLens — real-time cart analytics for Shopify stores." />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --green: #00a67e;
+      --green-dark: #007f60;
+      --dark: #111827;
+      --gray: #6b7280;
+      --light: #f9fafb;
+      --border: #e5e7eb;
+    }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; color: var(--dark); background: #fff; line-height: 1.6; }
+
+    /* NAV */
+    nav { display: flex; align-items: center; justify-content: space-between; padding: 20px 40px; border-bottom: 1px solid var(--border); }
+    .logo { font-weight: 700; font-size: 20px; text-decoration: none; color: var(--dark); display: flex; align-items: center; gap: 8px; }
+    .logo-dot { width: 10px; height: 10px; background: var(--green); border-radius: 50%; display: inline-block; }
+    nav a.cta-nav { background: var(--green); color: #fff; text-decoration: none; padding: 10px 20px; border-radius: 8px; font-size: 14px; font-weight: 600; transition: background 0.15s; }
+    nav a.cta-nav:hover { background: var(--green-dark); }
+
+    /* HERO */
+    .hero { text-align: center; padding: 90px 24px 80px; max-width: 680px; margin: 0 auto; }
+    .badge { display: inline-block; background: #ecfdf5; color: var(--green); font-size: 13px; font-weight: 600; padding: 6px 14px; border-radius: 100px; margin-bottom: 24px; }
+    .hero h1 { font-size: clamp(32px, 5vw, 52px); font-weight: 800; line-height: 1.15; letter-spacing: -0.02em; margin-bottom: 20px; }
+    .hero p { font-size: 18px; color: var(--gray); margin-bottom: 36px; max-width: 520px; margin-left: auto; margin-right: auto; }
+    .hero-cta { display: inline-block; background: var(--green); color: #fff; text-decoration: none; padding: 16px 32px; border-radius: 10px; font-size: 16px; font-weight: 600; transition: background 0.15s; }
+    .hero-cta:hover { background: var(--green-dark); }
+    .hero-sub { margin-top: 14px; font-size: 13px; color: #9ca3af; }
+
+    /* FEATURES */
+    .features { background: var(--light); padding: 80px 24px; }
+    .features-inner { max-width: 1000px; margin: 0 auto; }
+    .section-label { text-align: center; font-size: 13px; font-weight: 600; color: var(--green); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 12px; }
+    .section-title { text-align: center; font-size: clamp(24px, 3vw, 36px); font-weight: 700; margin-bottom: 56px; }
+    .feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px; }
+    .feature-card { background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 28px; }
+    .feature-icon { font-size: 28px; margin-bottom: 16px; }
+    .feature-card h3 { font-size: 17px; font-weight: 600; margin-bottom: 8px; }
+    .feature-card p { font-size: 15px; color: var(--gray); }
+
+    /* HOW IT WORKS */
+    .how { padding: 80px 24px; max-width: 640px; margin: 0 auto; text-align: center; }
+    .steps { display: flex; flex-direction: column; gap: 32px; text-align: left; margin-top: 48px; }
+    .step { display: flex; gap: 20px; align-items: flex-start; }
+    .step-num { flex-shrink: 0; width: 36px; height: 36px; background: var(--green); color: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px; }
+    .step h3 { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+    .step p { font-size: 15px; color: var(--gray); }
+
+    /* PRICING */
+    .pricing { background: var(--light); padding: 80px 24px; text-align: center; }
+    .price-card { display: inline-block; background: #fff; border: 1px solid var(--border); border-radius: 16px; padding: 40px 48px; max-width: 360px; width: 100%; }
+    .price-card .plan-name { font-size: 13px; font-weight: 600; color: var(--green); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 12px; }
+    .price-card .price { font-size: 48px; font-weight: 800; letter-spacing: -0.03em; margin-bottom: 4px; }
+    .price-card .price span { font-size: 18px; font-weight: 500; color: var(--gray); }
+    .price-card .trial { font-size: 14px; color: var(--gray); margin-bottom: 28px; }
+    .price-features { list-style: none; text-align: left; margin-bottom: 32px; display: flex; flex-direction: column; gap: 12px; }
+    .price-features li { font-size: 15px; display: flex; align-items: center; gap: 10px; }
+    .price-features li::before { content: "✓"; color: var(--green); font-weight: 700; }
+    .price-cta { display: block; background: var(--green); color: #fff; text-decoration: none; padding: 14px 24px; border-radius: 8px; font-weight: 600; font-size: 15px; transition: background 0.15s; }
+    .price-cta:hover { background: var(--green-dark); }
+
+    /* FOOTER */
+    footer { padding: 40px 24px; text-align: center; border-top: 1px solid var(--border); color: #9ca3af; font-size: 14px; }
+    footer a { color: #9ca3af; text-decoration: none; }
+    footer a:hover { color: var(--dark); }
+  </style>
+</head>
+<body>
+
+  <nav>
+    <a class="logo" href="/"><span class="logo-dot"></span> CartLens</a>
+    <a class="cta-nav" href="https://apps.shopify.com/cartlens" target="_blank" rel="noopener">Add to Shopify</a>
+  </nav>
+
+  <section class="hero">
+    <div class="badge">Free 14-day trial · No credit card required</div>
+    <h1>See what's in your shoppers' carts — right now</h1>
+    <p>CartLens gives Shopify merchants a live view of cart activity across their store. Track what's being added, abandoned, and converted as it happens — not after the fact.</p>
+    <a class="hero-cta" href="https://apps.shopify.com/cartlens" target="_blank" rel="noopener">Start free trial</a>
+    <p class="hero-sub">$9.99/month after trial · Cancel anytime</p>
+  </section>
+
+  <section class="features">
+    <div class="features-inner">
+      <p class="section-label">Features</p>
+      <h2 class="section-title">Everything you need to understand cart behavior</h2>
+      <div class="feature-grid">
+        <div class="feature-card">
+          <div class="feature-icon">⚡</div>
+          <h3>Live cart feed</h3>
+          <p>See every active cart in real time — what's in it, who's browsing, and how long they've been sitting there. Color-coded by status: browsing, in checkout, converted.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🔍</div>
+          <h3>Session timeline</h3>
+          <p>Click into any cart to see the full history — every add, remove, and checkout event with exact timestamps. Understand exactly where shoppers drop off.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">📊</div>
+          <h3>30-day analytics</h3>
+          <p>Conversion funnel, top products by cart adds and orders, and traffic referrer breakdown — all in a single clean dashboard. No setup required.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">👤</div>
+          <h3>Anonymous visitor tracking</h3>
+          <p>CartLens captures cart activity from every visitor — including anonymous shoppers who never reach checkout. Most abandoned carts are invisible without it.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="how">
+    <p class="section-label">How it works</p>
+    <h2 class="section-title">Up and running in minutes</h2>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div>
+          <h3>Install CartLens from the Shopify App Store</h3>
+          <p>One-click install. No theme edits, no code changes required.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div>
+          <h3>CartLens starts tracking immediately</h3>
+          <p>A lightweight pixel activates on your storefront and starts capturing cart events in real time.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div>
+          <h3>Open your dashboard and watch it live</h3>
+          <p>See active carts, session timelines, and analytics — no waiting for end-of-day reports.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="pricing">
+    <p class="section-label">Pricing</p>
+    <h2 class="section-title" style="margin-bottom: 40px;">Simple, flat pricing</h2>
+    <div class="price-card">
+      <p class="plan-name">Essentials</p>
+      <div class="price">$9.99<span>/mo</span></div>
+      <p class="trial">14-day free trial · No credit card required</p>
+      <ul class="price-features">
+        <li>Real-time cart activity feed</li>
+        <li>Full cart session timeline</li>
+        <li>30-day analytics &amp; funnel</li>
+        <li>Anonymous visitor tracking</li>
+      </ul>
+      <a class="price-cta" href="https://apps.shopify.com/cartlens" target="_blank" rel="noopener">Start free trial</a>
+    </div>
+  </section>
+
+  <footer>
+    <p>&copy; 2026 CartLens &nbsp;·&nbsp; <a href="mailto:support@cartlensapp.com">support@cartlensapp.com</a> &nbsp;·&nbsp; <a href="/privacy.html">Privacy Policy</a></p>
+  </footer>
+
+</body>
+</html>
