@@ -38,7 +38,8 @@
     /* NAV */
     nav { display: flex; align-items: center; justify-content: space-between; padding: 20px 40px; border-bottom: 1px solid var(--border); }
     .logo { font-weight: 700; font-size: 20px; text-decoration: none; color: var(--dark); display: flex; align-items: center; gap: 8px; }
-    .logo-dot { width: 10px; height: 10px; background: var(--green); border-radius: 50%; display: inline-block; }
+    @keyframes livePulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.35;transform:scale(0.75)} }
+    .logo-dot { width: 10px; height: 10px; background: var(--green); border-radius: 50%; display: inline-block; animation: livePulse 2s ease-in-out infinite; }
     nav a.cta-nav { background: var(--green); color: #fff; text-decoration: none; padding: 10px 20px; border-radius: 8px; font-size: 14px; font-weight: 600; transition: background 0.15s; }
     nav a.cta-nav:hover { background: var(--green-dark); }
 
