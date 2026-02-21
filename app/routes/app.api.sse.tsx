@@ -11,9 +11,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     const url = new URL(request.url);
     const shopId = url.searchParams.get("shopId");
 
-    console.log(`[SSE Endpoint] Request received for shopId: ${shopId}`);
-    console.log(`[SSE Endpoint] Using SSE manager instance: ${sseManager.instanceId}`);
-
     if (!shopId) {
       console.error("[SSE Endpoint] Missing shopId parameter");
       return new Response("Missing shopId", { status: 400 });
@@ -36,13 +33,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       return new Response("Forbidden", { status: 403 });
     }
 
-    console.log(`[SSE Endpoint] Shop found: ${shop.shopifyDomain} (id: ${shop.id})`);
-
     const stream = new ReadableStream({
       start(controller) {
         const clientId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-
-        console.log(`[SSE Endpoint] Creating client ${clientId} for shop ${shop.shopifyDomain}`);
 
         sseManager.addClient({
           id: clientId,
@@ -53,8 +46,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         // Send initial connection message
         const message = `event: connected\ndata: ${JSON.stringify({ clientId, timestamp: Date.now(), instanceId: sseManager.instanceId })}\n\n`;
         controller.enqueue(new TextEncoder().encode(message));
-
-        console.log(`[SSE Endpoint] Client ${clientId} connected for shop ${shop.shopifyDomain}, sent connection event`);
 
         // Keep-alive ping every 30 seconds
         const keepAliveInterval = setInterval(() => {
@@ -70,7 +61,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         request.signal.addEventListener("abort", () => {
           clearInterval(keepAliveInterval);
           sseManager.removeClient(clientId);
-          console.log(`[SSE Endpoint] Client ${clientId} disconnected`);
           try {
             controller.close();
           } catch {

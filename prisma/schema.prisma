@@ -46,8 +46,6 @@ model Shop {
   updatedAt       DateTime @updatedAt
 
   sessions        CartSession[]
-  settings        ShopSettings?
-  aggregatedStats AggregatedStats[]
 }
 
 model CartSession {
@@ -96,7 +94,6 @@ model CartSession {
   // Bot detection
   isSuspectedBot    Boolean @default(false)
   botReason         String?
-  merchantOverride  String? // "allow" or "block"
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -135,42 +132,4 @@ model CartEvent {
   @@index([sessionId, timestamp])
 }
 
-model ShopSettings {
-  id     String @id @default(cuid())
-  shopId String @unique
-  shop   Shop   @relation(fields: [shopId], references: [id], onDelete: Cascade)
 
-  // Display preferences
-  visibleColumns      String @default("[]") // JSON array of column keys
-  
-  // Exclusions
-  excludedProducts    String @default("[]") // JSON array of product IDs
-  excludedCollections String @default("[]") // JSON array of collection IDs
-
-  // Bot filter
-  botWhitelist String @default("[]") // JSON array of IPs/UAs to allow
-  botBlacklist String @default("[]") // JSON array of IPs/UAs to block
-
-  updatedAt DateTime @updatedAt
-}
-
-model AggregatedStats {
-  id     String   @id @default(cuid())
-  shopId String
-  shop   Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  date   DateTime // day the stats are for
-
-  // Daily aggregates
-  totalSessions  Int   @default(0)
-  totalCarts     Int   @default(0)
-  totalCheckouts Int   @default(0)
-  totalOrders    Int   @default(0)
-  totalCartValue Float @default(0)
-  totalOrderValue Float @default(0)
-  uniqueProducts Int   @default(0)
-
-  createdAt DateTime @default(now())
-
-  @@unique([shopId, date])
-  @@index([shopId])
-}
