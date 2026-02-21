@@ -38,7 +38,7 @@ export default function PrivacyPolicy() {
         <li>Referring URL and landing page</li>
         <li>UTM campaign parameters (source, medium, campaign)</li>
         <li>Approximate geographic location (city and country, derived from IP address)</li>
-        <li>IP address (used only to derive location; not stored long-term)</li>
+        <li>IP address (used solely to derive approximate geographic location; not stored after processing)</li>
         <li>Customer name and email address, if the shopper is logged into the store</li>
         <li>Discount codes applied at checkout</li>
         <li>Visit count (number of times a visitor has added to cart)</li>
@@ -72,7 +72,7 @@ export default function PrivacyPolicy() {
       <p>
         Data is stored in a secure database associated with the Merchant's store.
         Merchants can configure a data retention period in the app settings. By
-        default, cart session data is retained for 30 days. Data older than the
+        default, cart session data is retained for 90 days. Data older than the
         configured retention period is automatically deleted.
       </p>
 
@@ -143,7 +143,7 @@ export default function PrivacyPolicy() {
       </p>
       <p>
         <strong>CartLens Support</strong><br />
-        Email: <a href="mailto:alex@horizonmotorsport.com" style={{ color: "#1a1a1a" }}>alex@horizonmotorsport.com</a>
+        Email: <a href="mailto:alexanderwedeen+cartlens@gmail.com" style={{ color: "#1a1a1a" }}>alexanderwedeen+cartlens@gmail.com</a>
       </p>
     </div>
   );
