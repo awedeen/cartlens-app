@@ -40,10 +40,6 @@ class SSEManager {
       (client) => client.shopId === shopId
     );
     
-    if (shopClients.length === 0) {
-      console.warn(`[SSE Manager ${this.instanceId}] WARNING: No clients connected for shop ${shopId}. Broadcast will not be delivered.`);
-    }
-
     for (const client of shopClients) {
       try {
         const message = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;

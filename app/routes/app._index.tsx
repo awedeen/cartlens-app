@@ -257,10 +257,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     const botFilterEnabled = formData.get("botFilterEnabled") === "true";
     const rawThreshold = formData.get("highValueThreshold") as string;
     const highValueThreshold = rawThreshold && rawThreshold !== "" ? parseFloat(rawThreshold) : null;
+    const rawRetention = formData.get("retentionDays") as string;
+    const retentionDays = rawRetention ? Math.max(1, Math.min(365, parseInt(rawRetention, 10))) : 90;
 
     await prisma.shop.update({
       where: { id: shop.id },
-      data: { timezone, botFilterEnabled, highValueThreshold },
+      data: { timezone, botFilterEnabled, highValueThreshold, retentionDays },
     });
 
     return data({ success: true });
@@ -318,22 +320,26 @@ export default function Index() {
   const [highValueThreshold, setHighValueThreshold] = useState<string>(
     data.settings.highValueThreshold != null ? String(data.settings.highValueThreshold) : ""
   );
+  const [retentionDays, setRetentionDays] = useState<string>(String(data.settings.retentionDays));
 
   // Track saved state for CSB dirty detection + discard
   const [savedSettings, setSavedSettings] = useState({
     timezone: data.settings.timezone,
     botFilterEnabled: data.settings.botFilterEnabled,
     highValueThreshold: data.settings.highValueThreshold != null ? String(data.settings.highValueThreshold) : "",
+    retentionDays: String(data.settings.retentionDays),
   });
   const isSettingsDirty =
     timezone !== savedSettings.timezone ||
     botFilterEnabled !== savedSettings.botFilterEnabled ||
-    highValueThreshold !== savedSettings.highValueThreshold;
+    highValueThreshold !== savedSettings.highValueThreshold ||
+    retentionDays !== savedSettings.retentionDays;
 
   const handleDiscardSettings = () => {
     setTimezone(savedSettings.timezone);
     setBotFilterEnabled(savedSettings.botFilterEnabled);
     setHighValueThreshold(savedSettings.highValueThreshold);
+    setRetentionDays(savedSettings.retentionDays);
   };
   const [reportRange, setReportRange] = useState<7 | 30 | 90>(30);
 
@@ -439,7 +445,7 @@ export default function Index() {
     if (session.orderPlaced) {
       return { color: "#008060", label: "Converted" };
     }
-    if ((session as any).checkoutAbandoned) {
+    if (session.checkoutAbandoned) {
       return { color: "#e07a00", label: "Returned" };
     }
     if (session.checkoutStarted) {
@@ -588,8 +594,9 @@ export default function Index() {
     formData.append("timezone", timezone);
     formData.append("botFilterEnabled", botFilterEnabled ? "true" : "false");
     formData.append("highValueThreshold", highValueThreshold);
+    formData.append("retentionDays", retentionDays);
     settingsFetcher.submit(formData, { method: "POST" });
-    setSavedSettings({ timezone, botFilterEnabled, highValueThreshold });
+    setSavedSettings({ timezone, botFilterEnabled, highValueThreshold, retentionDays });
   };
 
   // Compute report stats client-side from loaded sessions, filtered by reportRange
@@ -608,7 +615,7 @@ export default function Index() {
   // Top products for selected range
   const rProductMap: Record<string, { title: string; cartAdds: number; checkouts: number; conversions: number }> = {};
   for (const s of filteredForReports) {
-    const evts = (s.events || []) as any[];
+    const evts = s.events || [];
     for (const e of evts.filter((e: any) => e.eventType === "cart_add")) {
       const key = e.productId || "unknown";
       if (!rProductMap[key]) rProductMap[key] = { title: e.productTitle || "Unknown", cartAdds: 0, checkouts: 0, conversions: 0 };
@@ -960,7 +967,7 @@ export default function Index() {
                               </>
                             )}
                             {event.eventType === "checkout_completed" && (
-                              <>Order placed{(selectedSession as any).orderNumber ? ` — #${(selectedSession as any).orderNumber}` : ""}</>
+                              <>Order placed{selectedSession.orderNumber ? ` — #${selectedSession.orderNumber}` : ""}</>
                             )}
                             {event.eventType === "checkout_abandoned" && "Left checkout — returned to browsing"}
                           </div>
@@ -1556,7 +1563,7 @@ export default function Index() {
               </div>
 
               {/* High Value Cart Threshold */}
-              <div>
+              <div style={{ paddingBottom: "20px", borderBottom: "1px solid #e3e3e3" }}>
                 <label style={{ display: "block", marginBottom: "8px", fontSize: "14px", fontWeight: 600, color: "#202223" }}>
                   High Value Cart Threshold
                 </label>
@@ -1582,6 +1589,36 @@ export default function Index() {
                       color: "#202223"
                     }}
                   />
+                </div>
+              </div>
+
+              {/* Data Retention */}
+              <div>
+                <label style={{ display: "block", marginBottom: "8px", fontSize: "14px", fontWeight: 600, color: "#202223" }}>
+                  Data Retention
+                </label>
+                <div style={{ fontSize: "13px", color: "#6d7175", marginBottom: "8px" }}>
+                  Cart sessions older than this will be automatically deleted. Min 1 day, max 365 days.
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <input
+                    type="number"
+                    min="1"
+                    max="365"
+                    step="1"
+                    value={retentionDays}
+                    onChange={(e) => setRetentionDays(e.target.value)}
+                    style={{
+                      width: "90px",
+                      padding: "8px 12px",
+                      fontSize: "14px",
+                      border: "1px solid #e3e3e3",
+                      borderRadius: "4px",
+                      background: "#ffffff",
+                      color: "#202223"
+                    }}
+                  />
+                  <span style={{ fontSize: "14px", color: "#6d7175" }}>days</span>
                 </div>
               </div>
 

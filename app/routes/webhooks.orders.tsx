@@ -10,8 +10,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   try {
     const { topic, shop, payload } = await authenticate.webhook(request);
 
-    console.log(`[Webhook] Received ${topic} from ${shop}`);
-
     if (topic !== "ORDERS_CREATE") {
       return data({ error: "Invalid topic" }, { status: 400 });
     }

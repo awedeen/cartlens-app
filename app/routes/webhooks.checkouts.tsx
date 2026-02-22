@@ -14,7 +14,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   // Shopify checkout payload includes cart_token which links to our CartSession
   const cartToken = payload.cart_token;
   if (!cartToken) {
-    console.log("[Checkout Webhook] No cart_token in payload, skipping");
     return data({ success: true }, { status: 200 });
   }
   // Look up shop record first
@@ -23,7 +22,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   });
 
   if (!shopRecord) {
-    console.log(`[Checkout Webhook] No Shop record for ${shop}`);
     return data({ success: true }, { status: 200 });
   }
 
@@ -36,7 +34,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   });
 
   if (!cartSession) {
-    console.log(`[Checkout Webhook] No CartSession found for cart_token ${cartToken}`);
     return data({ success: true }, { status: 200 });
   }
   // Update session — mark checkout started
@@ -90,7 +87,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   // Create checkout events — one for the session, plus one per line item
   const lineItems = payload.line_items || [];
-  console.log(`[Checkout Webhook] ${lineItems.length} line items in checkout`);
 
   // Query directly — avoids false-positives from take: 10 truncation
   const existingCheckoutEvent = await prisma.cartEvent.findFirst({

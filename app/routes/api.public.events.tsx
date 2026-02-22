@@ -101,12 +101,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       return data({ error: "Missing required fields: shopDomain, visitorId, eventType" }, { status: 400 });
     }
 
-    // Basic origin validation: check referer header contains shop domain
-    const referer = request.headers.get("referer") || request.headers.get("origin");
-    if (referer && !referer.includes(shopDomain.replace(".myshopify.com", ""))) {
-      console.warn(`[Public API] Origin mismatch: referer=${referer}, shopDomain=${shopDomain}`);
-      // Don't reject, just log - some legitimate requests may have no referer
-    }
+    // Basic origin validation — referer header is optional and stripped by some browsers/extensions
 
     // Look up shop in Session table to verify it's a real installed shop
     const session = await prisma.session.findFirst({
