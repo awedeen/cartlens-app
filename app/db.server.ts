@@ -2,15 +2,15 @@ import { PrismaClient } from "@prisma/client";
 
 declare global {
   // eslint-disable-next-line no-var
-  var prismaGlobal: PrismaClient;
+  var __prisma: PrismaClient | undefined;
 }
 
-if (process.env.NODE_ENV !== "production") {
-  if (!global.prismaGlobal) {
-    global.prismaGlobal = new PrismaClient();
-  }
+// Singleton in all environments — prevents multiple PrismaClient instances
+// from accumulating in dev (HMR) and ensures a single connection pool in prod.
+if (!globalThis.__prisma) {
+  globalThis.__prisma = new PrismaClient();
 }
 
-const prisma = global.prismaGlobal ?? new PrismaClient();
+const prisma = globalThis.__prisma;
 
 export default prisma;

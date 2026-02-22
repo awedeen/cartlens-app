@@ -65,24 +65,16 @@ class SSEManager {
   }
 }
 
-// Singleton instance using globalThis (more standard than global)
-// This ensures the same instance is shared across all module contexts
+// Singleton in all environments — ensures the same SSEManager instance is used
+// across module loads in dev (HMR) and in prod (prevents split-brain broadcasts).
 declare global {
   var __sseManager: SSEManager | undefined;
 }
 
-let sseManager: SSEManager;
-
-if (process.env.NODE_ENV !== "production") {
-  // Development: use global singleton to survive HMR
-  if (!globalThis.__sseManager) {
-    globalThis.__sseManager = new SSEManager();
-  } else {
-  }
-  sseManager = globalThis.__sseManager;
-} else {
-  // Production: create new instance
-  sseManager = new SSEManager();
+if (!globalThis.__sseManager) {
+  globalThis.__sseManager = new SSEManager();
 }
+
+const sseManager = globalThis.__sseManager;
 
 export default sseManager;

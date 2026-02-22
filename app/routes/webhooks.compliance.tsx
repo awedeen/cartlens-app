@@ -86,7 +86,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     case "SHOP_REDACT": {
       // Merchant uninstalled — delete all their data (48h after uninstall).
-      // CartSession, ShopSettings, CartEvent, AggregatedStats all cascade on Shop delete.
+      // CartSession and CartEvent cascade on Shop delete via schema onDelete: Cascade.
       const shopRecord = await prisma.shop.findFirst({ where: { shopifyDomain: shop } });
 
       if (shopRecord) {

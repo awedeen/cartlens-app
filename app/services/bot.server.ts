@@ -58,21 +58,3 @@ export function detectBot(userAgent: string | null | undefined): BotDetectionRes
 
   return { isBot: false };
 }
-
-export function isAllowedByMerchant(
-  ipAddress: string | null,
-  userAgent: string | null,
-  whitelist: string[],
-  blacklist: string[]
-): boolean | null {
-  // Check blacklist first
-  if (ipAddress && blacklist.includes(ipAddress)) return false;
-  if (userAgent && blacklist.some((pattern) => userAgent.includes(pattern))) return false;
-
-  // Check whitelist
-  if (ipAddress && whitelist.includes(ipAddress)) return true;
-  if (userAgent && whitelist.some((pattern) => userAgent.includes(pattern))) return true;
-
-  // No explicit allow/block
-  return null;
-}

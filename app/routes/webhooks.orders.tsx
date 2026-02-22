@@ -34,7 +34,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     const orderValue = parseFloat(payload.total_price || "0");
 
     const cartToken = payload.cart_token;
-    console.log(`[Webhook Orders] Order ${orderId} | cart_token: ${cartToken} | customer: ${customerEmail}`);
+    console.log(`[Webhook Orders] Order ${orderId} | cart_token: ${cartToken ? "[present]" : "[missing]"}`);
 
     // Find matching cart session — cart_token only (reliable link to web storefront sessions)
     // Draft orders, POS, and API orders have null cart_token and should not be attributed

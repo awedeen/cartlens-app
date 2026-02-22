@@ -51,11 +51,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     const cfCountry = request.headers.get("cf-ipcountry") || request.headers.get("CF-IPCountry");
     const cfCity = request.headers.get("cf-ipcity") || request.headers.get("CF-IPCity");
     const cfIP = request.headers.get("cf-connecting-ip") || request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-    console.log(`[Public Events] Geo headers: country=${cfCountry}, city=${cfCity}, ip=${cfIP}`);
 
     // Parse event payload
     const payload = await request.json();
-    console.log("[Public Events] Full payload:", JSON.stringify(payload).slice(0, 500));
     const {
       shopDomain,
       eventType,
@@ -291,7 +289,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       include: {
         events: {
           orderBy: { timestamp: "desc" },
-          take: 10,
         },
       },
     });

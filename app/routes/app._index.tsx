@@ -112,19 +112,26 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         }
       }
 
-      // Update DB and in-memory sessions
+      // Update DB in batches — one updateMany per unique image URL instead of one update per event
+      const imageToEventIds = new Map<string, string[]>();
       for (const s of sessions) {
         for (const e of s.events) {
           if (e.productId && !e.variantImage && imageMap.has(e.productId)) {
             const url = imageMap.get(e.productId)!;
-            e.variantImage = url;
-            await prisma.cartEvent.update({
-              where: { id: e.id },
-              data: { variantImage: url },
-            });
+            e.variantImage = url; // update in-memory immediately
+            if (!imageToEventIds.has(url)) imageToEventIds.set(url, []);
+            imageToEventIds.get(url)!.push(e.id);
           }
         }
       }
+      await Promise.all(
+        Array.from(imageToEventIds.entries()).map(([url, ids]) =>
+          prisma.cartEvent.updateMany({
+            where: { id: { in: ids } },
+            data: { variantImage: url },
+          })
+        )
+      );
     } catch (imgErr) {
       console.error("[Loader] Failed to fetch product images:", imgErr);
     }
