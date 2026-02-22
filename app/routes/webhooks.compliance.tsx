@@ -43,7 +43,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         },
       });
 
-      console.log(`[Compliance] data_request: found ${sessions.length} sessions for customer ${customerId || customerEmail}`);
+      console.log(`[Compliance] data_request: found ${sessions.length} session(s) for shop ${shop}`);
       // Response is informational — Shopify doesn't read the body, just expects 200
       return data({ customer_data: sessions }, { status: 200 });
     }
@@ -76,9 +76,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       if (ids.length > 0) {
         await prisma.cartEvent.deleteMany({ where: { sessionId: { in: ids } } });
         await prisma.cartSession.deleteMany({ where: { id: { in: ids } } });
-        console.log(`[Compliance] customers_redact: deleted ${ids.length} sessions for customer ${customerId || customerEmail}`);
+        console.log(`[Compliance] customers_redact: deleted ${ids.length} session(s) for shop ${shop}`);
       } else {
-        console.log(`[Compliance] customers_redact: no data found for customer ${customerId || customerEmail}`);
+        console.log(`[Compliance] customers_redact: no data found for shop ${shop}`);
       }
 
       return data({ deleted: ids.length }, { status: 200 });

@@ -6,12 +6,17 @@ import { authenticate, unauthenticated } from "../shopify.server";
 import prisma from "../db.server";
 import sseManager from "../services/sse.server";
 
-// Cache product images to avoid repeated API calls
+// Cache product images to avoid repeated API calls — capped at 500 entries (LRU-lite: evict oldest on overflow)
+const IMAGE_CACHE_MAX = 500;
 const imageCache = new Map<string, string | null>();
 
 async function getProductImage(shop: string, productId: string): Promise<string | null> {
   const cacheKey = `${shop}:${productId}`;
   if (imageCache.has(cacheKey)) return imageCache.get(cacheKey)!;
+  if (imageCache.size >= IMAGE_CACHE_MAX) {
+    // Delete the oldest entry (Map preserves insertion order)
+    imageCache.delete(imageCache.keys().next().value!);
+  }
 
   try {
     const { admin } = await unauthenticated.admin(shop);

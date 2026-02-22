@@ -19,28 +19,6 @@ interface LoaderData {
   shopId: string;
   pixelInstalled: boolean;
   sessions: SessionWithMeta[];
-  stats: {
-    totalCarts: number;
-    totalCheckouts: number;
-    totalOrders: number;
-    conversionRate: number;
-    avgCartValue: number;
-    abandonmentRate: number;
-  };
-  topProducts: Array<{
-    productId: string;
-    productTitle: string;
-    cartAdds: number;
-    checkouts: number;
-    conversions: number;
-    conversionRate: number;
-  }>;
-  topReferrers: Array<{
-    referrer: string;
-    sessions: number;
-    cartAdds: number;
-    conversionRate: number;
-  }>;
   settings: {
     timezone: string;
     retentionDays: number;
@@ -173,98 +151,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     visitNumber: visitCountMap.get(s.id) || 1,
   }));
 
-  // Calculate stats (last 30 days)
-  const thirtyDaysAgo = new Date();
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-  const recentSessions = await prisma.cartSession.findMany({
-    where: {
-      shopId: shop.id,
-      createdAt: { gte: thirtyDaysAgo },
-    },
-    include: {
-      events: true,
-    },
-  });
-
-  const totalCarts = recentSessions.filter((s) => s.cartCreated).length;
-  const totalCheckouts = recentSessions.filter((s) => s.checkoutStarted).length;
-  const totalOrders = recentSessions.filter((s) => s.orderPlaced).length;
-  const conversionRate = totalCarts > 0 ? (totalOrders / totalCarts) * 100 : 0;
-  const avgCartValue = totalCarts > 0 
-    ? recentSessions.reduce((sum, s) => sum + s.cartTotal, 0) / totalCarts
-    : 0;
-  const abandonmentRate = totalCarts > 0 ? ((totalCarts - totalOrders) / totalCarts) * 100 : 0;
-
-  // Top products
-  const productMap: Record<string, { title: string; cartAdds: number; checkouts: number; conversions: number }> = {};
-  
-  for (const session of recentSessions) {
-    const events = session.events || [];
-    const cartAddEvents = events.filter((e: any) => e.eventType === "cart_add");
-    const checkoutItems = events.filter((e: any) => e.eventType === "checkout_item");
-    
-    for (const event of cartAddEvents) {
-      const key = event.productId || "unknown";
-      if (!productMap[key]) {
-        productMap[key] = { title: event.productTitle || "Unknown Product", cartAdds: 0, checkouts: 0, conversions: 0 };
-      }
-      productMap[key].cartAdds += 1;
-      if (session.orderPlaced) {
-        productMap[key].conversions += 1;
-      }
-    }
-    
-    // Count products that reached checkout (once per session, not per event)
-    const checkoutProductIds = new Set(checkoutItems.map((e: any) => e.productId).filter(Boolean));
-    for (const productId of checkoutProductIds) {
-      const item = checkoutItems.find((e: any) => e.productId === productId);
-      if (!productMap[productId]) {
-        productMap[productId] = { title: item?.productTitle || "Unknown Product", cartAdds: 0, checkouts: 0, conversions: 0 };
-      }
-      productMap[productId].checkouts += 1;
-    }
-  }
-
-  const topProducts = Object.entries(productMap)
-    .map(([productId, data]) => ({
-      productId,
-      productTitle: data.title,
-      cartAdds: data.cartAdds,
-      checkouts: data.checkouts,
-      conversions: data.conversions,
-      conversionRate: data.cartAdds > 0 ? (data.conversions / data.cartAdds) * 100 : 0,
-    }))
-    .sort((a, b) => b.cartAdds - a.cartAdds)
-    .slice(0, 10);
-
-  // Top referrers
-  const referrerMap: Record<string, { sessions: number; cartAdds: number; conversions: number }> = {};
-  
-  for (const session of recentSessions) {
-    const referrer = session.referrerUrl || "Direct";
-    if (!referrerMap[referrer]) {
-      referrerMap[referrer] = { sessions: 0, cartAdds: 0, conversions: 0 };
-    }
-    referrerMap[referrer].sessions += 1;
-    if (session.cartCreated) {
-      referrerMap[referrer].cartAdds += 1;
-    }
-    if (session.orderPlaced) {
-      referrerMap[referrer].conversions += 1;
-    }
-  }
-
-  const topReferrers = Object.entries(referrerMap)
-    .map(([referrer, data]) => ({
-      referrer,
-      sessions: data.sessions,
-      cartAdds: data.cartAdds,
-      conversionRate: data.cartAdds > 0 ? (data.conversions / data.cartAdds) * 100 : 0,
-    }))
-    .sort((a, b) => b.sessions - a.sessions)
-    .slice(0, 10);
-
   // Check if pixel is already installed
   let pixelInstalled = false;
   try {
@@ -281,7 +167,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       let existingSettings: any = {};
       try { existingSettings = JSON.parse(existingPixel.settings || "{}"); } catch {}
       if (existingSettings.app_url !== currentAppUrl) {
-        console.log(`[Pixel] Updating app_url from ${existingSettings.app_url} to ${currentAppUrl}`);
         const newSettings = JSON.stringify({ ...existingSettings, app_url: currentAppUrl });
         await admin.graphql(`
           mutation updatePixel($id: ID!, $settings: JSON!) {
@@ -300,16 +185,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     shopId: shop.id,
     pixelInstalled,
     sessions: sessionsWithMeta,
-    stats: {
-      totalCarts,
-      totalCheckouts,
-      totalOrders,
-      conversionRate,
-      avgCartValue,
-      abandonmentRate,
-    },
-    topProducts,
-    topReferrers,
     settings: {
       timezone: shop.timezone,
       retentionDays: shop.retentionDays,
@@ -366,7 +241,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         }
       `, { variables: { settings: pixelSettings } });
       const result = await response.json();
-      console.log("[Pixel Install]", JSON.stringify(result));
       const errors = result?.data?.webPixelCreate?.userErrors;
       if (errors && errors.length > 0) {
         return data({ success: false, error: errors[0].message });
@@ -465,20 +339,15 @@ export default function Index() {
 
   // Connect to SSE for real-time updates
   useEffect(() => {
-    console.log("[SSE Client] Connecting to SSE endpoint for shopId:", data.shopId);
-    
     const eventSource = new EventSource(`/app/api/sse?shopId=${data.shopId}`);
     eventSourceRef.current = eventSource;
 
-    eventSource.addEventListener("connected", (e) => {
-      const connData = JSON.parse(e.data);
-      console.log("[SSE Client] Connected successfully:", connData);
-      console.log("[SSE Client] Server instance ID:", connData.instanceId);
+    eventSource.addEventListener("connected", (_e) => {
+      // SSE connection established
     });
 
     eventSource.addEventListener("cart-update", (e) => {
       const update = JSON.parse(e.data);
-      console.log("[SSE Client] Received cart-update:", update);
 
       triggerFlash(update.session?.id);
 
@@ -519,18 +388,11 @@ export default function Index() {
       });
     });
 
-    eventSource.onerror = (error) => {
-      console.error("[SSE Client] Connection error:", error);
-      console.error("[SSE Client] ReadyState:", eventSource.readyState);
-      // ReadyState: 0 = CONNECTING, 1 = OPEN, 2 = CLOSED
+    eventSource.onerror = () => {
+      // EventSource will auto-reconnect — no action needed
     };
 
-    eventSource.addEventListener("open", () => {
-      console.log("[SSE Client] Connection opened");
-    });
-
     return () => {
-      console.log("[SSE Client] Closing connection");
       eventSource.close();
     };
   }, [data.shopId]);
@@ -763,6 +625,20 @@ export default function Index() {
   const rTopProducts = Object.entries(rProductMap)
     .map(([productId, d]) => ({ productId, productTitle: d.title, cartAdds: d.cartAdds, checkouts: d.checkouts, conversions: d.conversions, conversionRate: d.cartAdds > 0 ? (d.conversions / d.cartAdds) * 100 : 0 }))
     .sort((a, b) => b.cartAdds - a.cartAdds)
+    .slice(0, 10);
+
+  // Top referrers for selected range — computed client-side so the toggle affects this too
+  const rReferrerMap: Record<string, { sessions: number; cartAdds: number; conversions: number }> = {};
+  for (const s of filteredForReports) {
+    const referrer = s.referrerUrl || "Direct";
+    if (!rReferrerMap[referrer]) rReferrerMap[referrer] = { sessions: 0, cartAdds: 0, conversions: 0 };
+    rReferrerMap[referrer].sessions += 1;
+    if (s.cartCreated) rReferrerMap[referrer].cartAdds += 1;
+    if (s.orderPlaced) rReferrerMap[referrer].conversions += 1;
+  }
+  const rTopReferrers = Object.entries(rReferrerMap)
+    .map(([referrer, d]) => ({ referrer, sessions: d.sessions, cartAdds: d.cartAdds, conversionRate: d.cartAdds > 0 ? (d.conversions / d.cartAdds) * 100 : 0 }))
+    .sort((a, b) => b.sessions - a.sessions)
     .slice(0, 10);
 
   return (
@@ -1525,7 +1401,7 @@ export default function Index() {
                 Top Referrers
               </h3>
             </div>
-            {data.topReferrers.length === 0 ? (
+            {rTopReferrers.length === 0 ? (
               <div style={{ fontSize: "14px", color: "#6d7175", padding: "20px 16px", textAlign: "center" }}>
                 No referrer data yet
               </div>
@@ -1540,8 +1416,8 @@ export default function Index() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.topReferrers.map((referrer, idx) => (
-                    <tr key={idx} style={{ borderBottom: idx < data.topReferrers.length - 1 ? "1px solid #f1f1f1" : "none" }}>
+                  {rTopReferrers.map((referrer, idx) => (
+                    <tr key={idx} style={{ borderBottom: idx < rTopReferrers.length - 1 ? "1px solid #f1f1f1" : "none" }}>
                       <td style={{ padding: "10px 16px", fontSize: "13px", fontWeight: 500, color: "#202223", maxWidth: "200px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {referrer.referrer}
                       </td>
