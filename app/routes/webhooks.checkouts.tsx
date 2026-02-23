@@ -89,18 +89,25 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   // Create checkout events — one for the session, plus one per line item
   const lineItems = payload.line_items || [];
 
-  // Query directly — avoids false-positives from take: 10 truncation
+  // Create checkout_started event — idempotent via partial unique index on
+  // (sessionId) WHERE eventType = 'checkout_started'. The findFirst pre-check
+  // avoids the write on subsequent webhooks; the try/catch handles the rare
+  // concurrent-webhook race where two requests slip past the check simultaneously.
   const existingCheckoutEvent = await prisma.cartEvent.findFirst({
     where: { sessionId: cartSession.id, eventType: "checkout_started" },
   });
   if (!existingCheckoutEvent) {
-    await prisma.cartEvent.create({
-      data: {
-        sessionId: cartSession.id,
-        eventType: "checkout_started",
-        timestamp: new Date(),
-      },
-    });
+    try {
+      await prisma.cartEvent.create({
+        data: {
+          sessionId: cartSession.id,
+          eventType: "checkout_started",
+          timestamp: new Date(),
+        },
+      });
+    } catch (e: any) {
+      if (e?.code !== "P2002") throw e; // ignore unique constraint violation (duplicate webhook)
+    }
   }
 
   // Record each product that reached checkout (only once per session)

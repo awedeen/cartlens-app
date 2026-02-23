@@ -35,16 +35,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   const shopifyDomain = session.shop;
 
-  // Find or create Shop record
-  let shop = await prisma.shop.findUnique({
+  // Find or create Shop record — upsert is race-condition-safe (two concurrent
+  // page loads would both attempt create and hit the @unique constraint otherwise)
+  const shop = await prisma.shop.upsert({
     where: { shopifyDomain },
+    create: { shopifyDomain },
+    update: {},
   });
-
-  if (!shop) {
-    shop = await prisma.shop.create({
-      data: { shopifyDomain },
-    });
-  }
 
   // Get recent sessions (last 100)
   const sessions = await prisma.cartSession.findMany({
