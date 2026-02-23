@@ -12,13 +12,17 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   // Merchants get a 14-day free trial; after that they must subscribe.
   // billing.require throws a redirect Response to Shopify's billing page
   // if no active subscription exists — boundary.error handles it cleanly.
+  // isTest: true = no real charge (safe for dev/test stores and App Store review).
+  // Set BILLING_LIVE_MODE=true in Railway env when ready for real production billing.
+  const billingIsTest = process.env.BILLING_LIVE_MODE !== "true";
+
   await billing.require({
     plans: [PLANS.ESSENTIAL],
-    isTest: process.env.NODE_ENV !== "production",
+    isTest: billingIsTest,
     onFailure: async () =>
       billing.request({
         plan: PLANS.ESSENTIAL,
-        isTest: process.env.NODE_ENV !== "production",
+        isTest: billingIsTest,
         returnUrl: `${process.env.SHOPIFY_APP_URL || ""}/app`,
       }),
   });
