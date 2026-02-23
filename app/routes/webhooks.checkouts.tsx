@@ -3,6 +3,7 @@
 
 import type { ActionFunctionArgs } from "react-router";
 import { data } from "react-router";
+import { Prisma } from "@prisma/client";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import sseManager from "../services/sse.server";
@@ -37,7 +38,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return data({ success: true }, { status: 200 });
   }
   // Update session — mark checkout started
-  const updates: any = { checkoutStarted: true };
+  const updates: Prisma.CartSessionUpdateInput = { checkoutStarted: true };
 
   // If customer info is available in checkout, capture it
   // Pull from all available sources so we capture data regardless of checkout step order

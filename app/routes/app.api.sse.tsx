@@ -39,11 +39,14 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       start(controller) {
         const clientId = `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
 
-        sseManager.addClient({
+        // addClient returns false and closes the controller if the per-shop cap (10) is reached.
+        // Guard against enqueuing to a closed controller.
+        const added = sseManager.addClient({
           id: clientId,
           shopId: shop.id,
           controller,
         });
+        if (!added) return;
 
         // Send initial connection message
         const message = `event: connected\ndata: ${JSON.stringify({ clientId, timestamp: Date.now(), instanceId: sseManager.instanceId })}\n\n`;

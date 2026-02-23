@@ -38,7 +38,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return data({ error: "Method not allowed" }, { status: 405 });
   }
 
-  // Rate limit by IP — 120 requests/minute covers normal pixel activity
+  // Rate limit by IP — 120 requests/minute covers normal pixel activity.
+  // Railway runs behind Fastly CDN — real client IP comes from x-forwarded-for.
+  // cf-connecting-ip is Cloudflare-specific and will always be null on Railway,
+  // but keeping it as a no-op fallback doesn't hurt.
   const clientIp =
     request.headers.get("cf-connecting-ip") ||
     request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
@@ -196,9 +199,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     // Update session funnel status and cart summary
     const updates: Prisma.CartSessionUpdateInput = {};
 
-    if (eventType === "cart_add") {
-      updates.cartCreated = true;
-      // Recalculate cart total and item count
+    if (eventType === "cart_add" || eventType === "cart_remove") {
+      if (eventType === "cart_add") {
+        updates.cartCreated = true;
+      }
+      // Recalculate cart total and item count from all add/remove events
       const cartEvents = await prisma.cartEvent.findMany({
         where: {
           sessionId: cartSession.id,

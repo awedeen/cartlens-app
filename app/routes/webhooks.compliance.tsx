@@ -22,6 +22,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         return data({ customer_data: [] }, { status: 200 });
       }
 
+      // Only select id — we just need the count for logging; Shopify ignores the response body
       const sessions = await prisma.cartSession.findMany({
         where: {
           shopId: shopRecord.id,
@@ -30,22 +31,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             customerEmail ? { customerEmail } : {},
           ].filter(o => Object.keys(o).length > 0),
         },
-        select: {
-          id: true,
-          visitorId: true,
-          customerName: true,
-          customerEmail: true,
-          customerId: true,
-          cartTotal: true,
-          itemCount: true,
-          createdAt: true,
-          updatedAt: true,
-        },
+        select: { id: true },
       });
 
       console.log(`[Compliance] data_request: found ${sessions.length} session(s) for shop ${shop}`);
-      // Response is informational — Shopify doesn't read the body, just expects 200
-      return data({ customer_data: sessions }, { status: 200 });
+      // Shopify ignores the compliance webhook response body — just expects 200.
+      // Do NOT return session data here; that's PII that would be logged by infrastructure.
+      return data({ success: true }, { status: 200 });
     }
 
     case "CUSTOMERS_REDACT": {
