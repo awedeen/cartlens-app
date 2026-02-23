@@ -666,6 +666,7 @@ export default function Index() {
     .slice(0, 10);
 
   return (
+    // @ts-ignore -- App Bridge s-page type definition omits `title` but it works at runtime
     <s-page title="CartLens">
       {/* Contextual Save Bar — shown when Settings tab has unsaved changes */}
       <SaveBar open={isSettingsDirty}>
