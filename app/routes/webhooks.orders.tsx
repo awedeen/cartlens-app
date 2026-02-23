@@ -64,9 +64,15 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           orderValue,
           customerId: customerId || session.customerId,
           customerEmail: customerEmail || session.customerEmail,
-          customerName: payload.customer?.first_name && payload.customer?.last_name
-            ? `${payload.customer.first_name} ${payload.customer.last_name}`
-            : session.customerName,
+          customerName: (() => {
+            // Prefer shipping address name (what user typed) over stored customer profile
+            const fromShipping = [payload.shipping_address?.first_name, payload.shipping_address?.last_name].filter(Boolean).join(" ");
+            const fromBilling = [payload.billing_address?.first_name, payload.billing_address?.last_name].filter(Boolean).join(" ");
+            const fromCustomer = payload.customer?.first_name && payload.customer?.last_name
+              ? `${payload.customer.first_name} ${payload.customer.last_name}`
+              : "";
+            return fromShipping || fromBilling || fromCustomer || session.customerName;
+          })(),
         },
       });
 

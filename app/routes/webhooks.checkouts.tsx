@@ -50,13 +50,15 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const email = payload.email || payload.customer?.email;
   if (email) updates.customerEmail = email;
 
-  // Name: customer object → billing address → shipping address
-  // shipping_address.first/last_name is populated as soon as shipping step is filled,
-  // often before payload.customer reflects it
-  const nameFromCustomer = [payload.customer?.first_name, payload.customer?.last_name].filter(Boolean).join(" ");
-  const nameFromBilling = [payload.billing_address?.first_name, payload.billing_address?.last_name].filter(Boolean).join(" ");
+  // Name: shipping address → billing address → customer object
+  // Prefer what the user actually typed at checkout over their stored account profile.
+  // shipping_address is populated from the shipping step form (most live source).
+  // customer.first/last_name reflects the saved Shopify customer profile which may
+  // differ from what they enter during this checkout — using it first was wrong.
   const nameFromShipping = [payload.shipping_address?.first_name, payload.shipping_address?.last_name].filter(Boolean).join(" ");
-  const resolvedName = nameFromCustomer || nameFromBilling || nameFromShipping;
+  const nameFromBilling = [payload.billing_address?.first_name, payload.billing_address?.last_name].filter(Boolean).join(" ");
+  const nameFromCustomer = [payload.customer?.first_name, payload.customer?.last_name].filter(Boolean).join(" ");
+  const resolvedName = nameFromShipping || nameFromBilling || nameFromCustomer;
   if (resolvedName && resolvedName !== cartSession.customerName) {
     updates.customerName = resolvedName;
   }
