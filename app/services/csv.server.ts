@@ -33,43 +33,48 @@ export const AVAILABLE_COLUMNS: CSVColumn[] = [
   { key: "updatedAt", label: "Last Activity" },
 ];
 
+// Characters that trigger formula execution in Excel/Google Sheets (CSV injection)
+const FORMULA_PREFIXES = ["=", "+", "-", "@", "\t", "\r"];
+
+/**
+ * Safely formats a single CSV cell value.
+ * - Always wraps strings in double quotes
+ * - Escapes internal double quotes
+ * - Prefixes formula-injection characters with a space to prevent execution
+ */
+function formatCell(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (value instanceof Date) return `"${value.toISOString()}"`;
+  if (typeof value === "number") return String(value);
+
+  // String: sanitize then wrap in quotes
+  let str = String(value);
+  if (FORMULA_PREFIXES.some((p) => str.startsWith(p))) {
+    str = " " + str; // prefix space neutralises formula execution
+  }
+  // Escape internal double quotes by doubling them
+  str = str.replace(/"/g, '""');
+  return `"${str}"`;
+}
+
 type SessionWithEvents = CartSession & { events: CartEvent[] };
 
 export function generateCSV(
   sessions: SessionWithEvents[],
   columns: string[]
 ): string {
-  // Filter to requested columns
   const selectedColumns = AVAILABLE_COLUMNS.filter((col) =>
     columns.includes(col.key)
   );
 
-  // Build header row
-  const header = selectedColumns.map((col) => col.label).join(",");
+  const header = selectedColumns.map((col) => `"${col.label}"`).join(",");
 
-  // Build data rows
-  const rows = sessions.map((session) => {
-    return selectedColumns
-      .map((col) => {
-        let value: any = (session as any)[col.key];
-
-        // Format special values
-        if (value === null || value === undefined) {
-          return "";
-        }
-        if (typeof value === "boolean") {
-          return value ? "Yes" : "No";
-        }
-        if (value instanceof Date) {
-          return value.toISOString();
-        }
-        if (typeof value === "string" && value.includes(",")) {
-          return `"${value.replace(/"/g, '""')}"`;
-        }
-        return value;
-      })
-      .join(",");
-  });
+  const rows = sessions.map((session) =>
+    selectedColumns
+      .map((col) => formatCell((session as Record<string, unknown>)[col.key]))
+      .join(",")
+  );
 
   return [header, ...rows].join("\n");
 }

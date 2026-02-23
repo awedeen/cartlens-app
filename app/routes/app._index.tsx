@@ -253,19 +253,24 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   }
 
   if (action === "updateSettings") {
-    const timezone = formData.get("timezone") as string;
-    const botFilterEnabled = formData.get("botFilterEnabled") === "true";
-    const rawThreshold = formData.get("highValueThreshold") as string;
-    const highValueThreshold = rawThreshold && rawThreshold !== "" ? parseFloat(rawThreshold) : null;
-    const rawRetention = formData.get("retentionDays") as string;
-    const retentionDays = rawRetention ? Math.max(1, Math.min(365, parseInt(rawRetention, 10))) : 90;
+    try {
+      const timezone = formData.get("timezone") as string;
+      const botFilterEnabled = formData.get("botFilterEnabled") === "true";
+      const rawThreshold = formData.get("highValueThreshold") as string;
+      const highValueThreshold = rawThreshold && rawThreshold !== "" ? parseFloat(rawThreshold) : null;
+      const rawRetention = formData.get("retentionDays") as string;
+      const retentionDays = rawRetention ? Math.max(1, Math.min(365, parseInt(rawRetention, 10))) : 90;
 
-    await prisma.shop.update({
-      where: { id: shop.id },
-      data: { timezone, botFilterEnabled, highValueThreshold, retentionDays },
-    });
+      await prisma.shop.update({
+        where: { id: shop.id },
+        data: { timezone, botFilterEnabled, highValueThreshold, retentionDays },
+      });
 
-    return data({ success: true });
+      return data({ success: true });
+    } catch (e: any) {
+      console.error("[Settings Update] Error:", e);
+      return data({ success: false, error: "Failed to save settings. Please try again." });
+    }
   }
 
   return data({ success: false });
@@ -588,7 +593,19 @@ export default function Index() {
     );
   };
 
+  // Pending settings — applied to savedSettings only after server confirms success
+  const pendingSettingsRef = useRef<typeof savedSettings | null>(null);
+
+  useEffect(() => {
+    if (settingsFetcher.data?.success && pendingSettingsRef.current) {
+      setSavedSettings(pendingSettingsRef.current);
+      pendingSettingsRef.current = null;
+    }
+  }, [settingsFetcher.data]);
+
   const handleSaveSettings = () => {
+    const pending = { timezone, botFilterEnabled, highValueThreshold, retentionDays };
+    pendingSettingsRef.current = pending;
     const formData = new FormData();
     formData.append("action", "updateSettings");
     formData.append("timezone", timezone);
@@ -596,7 +613,6 @@ export default function Index() {
     formData.append("highValueThreshold", highValueThreshold);
     formData.append("retentionDays", retentionDays);
     settingsFetcher.submit(formData, { method: "POST" });
-    setSavedSettings({ timezone, botFilterEnabled, highValueThreshold, retentionDays });
   };
 
   // Compute report stats client-side from loaded sessions, filtered by reportRange
@@ -1231,7 +1247,10 @@ export default function Index() {
       {activeTab === "reports" && (
         <div style={{ overflow: "hidden" }}>
           {/* Date Range Toggle */}
-          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "16px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+            <span style={{ fontSize: "12px", color: "#9ca3af" }}>
+              Based on {sessions.length} most recent session{sessions.length !== 1 ? "s" : ""}
+            </span>
             <div style={{ display: "flex", border: "1px solid #e3e3e3", borderRadius: "6px", overflow: "hidden" }}>
               {([7, 30, 90] as const).map((r) => (
                 <button
@@ -1622,6 +1641,20 @@ export default function Index() {
                 </div>
               </div>
 
+              {/* Save error */}
+              {settingsFetcher.data?.success === false && settingsFetcher.data?.error && (
+                <div style={{
+                  marginTop: "16px",
+                  padding: "10px 14px",
+                  background: "#fff4f4",
+                  border: "1px solid #fca5a5",
+                  borderRadius: "6px",
+                  fontSize: "13px",
+                  color: "#b91c1c"
+                }}>
+                  {settingsFetcher.data.error}
+                </div>
+              )}
               {/* Settings saved via Contextual Save Bar (above) */}
             </div>
           </div>
