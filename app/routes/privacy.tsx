@@ -14,7 +14,7 @@ export default function PrivacyPolicy() {
         CartLens Privacy Policy
       </h1>
       <p style={{ color: "#666", marginBottom: "40px" }}>
-        Last updated: February 18, 2026
+        Last updated: February 22, 2026
       </p>
 
       <p>
@@ -38,7 +38,8 @@ export default function PrivacyPolicy() {
         <li>Referring URL and landing page</li>
         <li>UTM campaign parameters (source, medium, campaign)</li>
         <li>Approximate geographic location (city and country, derived from IP address)</li>
-        <li>IP address (used solely to derive approximate geographic location; not stored after processing)</li>
+        <li>IP address (stored for session attribution and geographic lookup; retained for up to 90 days)</li>
+        <li>Device type, browser, operating system, and user agent string</li>
         <li>Customer name and email address, if the shopper is logged into the store</li>
         <li>Discount codes applied at checkout</li>
         <li>Visit count (number of times a visitor has added to cart)</li>
@@ -71,9 +72,9 @@ export default function PrivacyPolicy() {
       <h2 style={h2Style}>3. Data Storage and Retention</h2>
       <p>
         Data is stored in a secure database associated with the Merchant's store.
-        Merchants can configure a data retention period in the app settings. By
-        default, cart session data is retained for 90 days. Data older than the
-        configured retention period is automatically deleted.
+        Cart session data is retained for 90 days and then automatically deleted.
+        Merchants may request immediate deletion of all their store's data at any
+        time by uninstalling CartLens.
       </p>
 
       <h2 style={h2Style}>4. Data Sharing</h2>
