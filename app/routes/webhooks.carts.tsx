@@ -95,29 +95,33 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         include: { events: true },
       });
 
-      // Create initial cart_add events
-      for (const item of lineItems) {
-        // Try webhook payload image first, fall back to API
-        const webhookImage = item.featured_image?.url || item.image || null;
-        const variantImage = webhookImage || await getProductImage(shop, item.product_id?.toString());
-        await prisma.cartEvent.create({
-          data: {
-            sessionId: session.id,
-            eventType: "cart_add",
-            productId: item.product_id?.toString(),
-            productTitle: item.title,
-            variantId: item.variant_id?.toString(),
-            variantTitle: item.variant_title,
-            quantity: item.quantity,
-            variantImage,
-            price: parseFloat(item.price),
-          },
-        });
-      }
+      // Create initial cart_add events — pre-fetch images in parallel
+      const createImages = await Promise.all(
+        lineItems.map(async (item: any) => {
+          const webhookImage = item.featured_image?.url || item.image || null;
+          return webhookImage || await getProductImage(shop, item.product_id?.toString());
+        })
+      );
+      await Promise.all(
+        lineItems.map((item: any, idx: number) =>
+          prisma.cartEvent.create({
+            data: {
+              sessionId: session!.id,
+              eventType: "cart_add",
+              productId: item.product_id?.toString(),
+              productTitle: item.title,
+              variantId: item.variant_id?.toString(),
+              variantTitle: item.variant_title,
+              quantity: item.quantity,
+              variantImage: createImages[idx],
+              price: parseFloat(item.price),
+            },
+          })
+        )
+      );
     } else if (session) {
       // CARTS_UPDATE — diff line items to detect adds and removes
-      const existingItems = new Map<string, { quantity: number; title: string; price: number }>();
-      
+
       // Build map of what we had from last snapshot
       // Use the most recent events to reconstruct current cart state
       const lastEvents = session.events || [];
@@ -139,27 +143,34 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         newState.set(key, { quantity: item.quantity, item });
       }
 
-      // Detect additions (new items or increased quantity)
-      for (const [key, { quantity, item }] of newState) {
-        const oldQty = currentState.get(key) || 0;
-        if (quantity > oldQty) {
+      // Detect additions (new items or increased quantity) — pre-fetch images in parallel
+      const additions = Array.from(newState.entries())
+        .map(([key, { quantity, item }]) => ({ key, quantity, item, oldQty: currentState.get(key) || 0 }))
+        .filter(({ quantity, oldQty }) => quantity > oldQty);
+
+      const additionImages = await Promise.all(
+        additions.map(({ item }) => {
           const webhookImage = item.featured_image?.url || item.image || null;
-          const variantImage = webhookImage || await getProductImage(shop, item.product_id?.toString());
-          await prisma.cartEvent.create({
+          return webhookImage ? Promise.resolve(webhookImage) : getProductImage(shop, item.product_id?.toString());
+        })
+      );
+      await Promise.all(
+        additions.map(({ quantity, item, oldQty }, idx) =>
+          prisma.cartEvent.create({
             data: {
-              sessionId: session.id,
+              sessionId: session!.id,
               eventType: "cart_add",
               productId: item.product_id?.toString(),
               productTitle: item.title,
               variantId: item.variant_id?.toString(),
               variantTitle: item.variant_title,
               quantity: quantity - oldQty,
-              variantImage,
+              variantImage: additionImages[idx],
               price: parseFloat(item.price),
             },
-          });
-        }
-      }
+          })
+        )
+      );
 
       // Detect removals (items gone or decreased quantity)
       for (const [key, oldQty] of currentState) {
@@ -212,21 +223,30 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         include: { events: true },
       });
 
-      for (const item of lineItems) {
-        await prisma.cartEvent.create({
-          data: {
-            sessionId: session.id,
-            eventType: "cart_add",
-            productId: item.product_id?.toString(),
-            productTitle: item.title,
-            variantId: item.variant_id?.toString(),
-            variantTitle: item.variant_title,
-            quantity: item.quantity,
-            variantImage: item.featured_image?.url || item.image || await getProductImage(shop, item.product_id?.toString()),
-            price: parseFloat(item.price),
-          },
-        });
-      }
+      // Pre-fetch images in parallel for new session items
+      const newSessionImages = await Promise.all(
+        lineItems.map((item: any) => {
+          const webhookImage = item.featured_image?.url || item.image || null;
+          return webhookImage ? Promise.resolve(webhookImage) : getProductImage(shop, item.product_id?.toString());
+        })
+      );
+      await Promise.all(
+        lineItems.map((item: any, idx: number) =>
+          prisma.cartEvent.create({
+            data: {
+              sessionId: session!.id,
+              eventType: "cart_add",
+              productId: item.product_id?.toString(),
+              productTitle: item.title,
+              variantId: item.variant_id?.toString(),
+              variantTitle: item.variant_title,
+              quantity: item.quantity,
+              variantImage: newSessionImages[idx],
+              price: parseFloat(item.price),
+            },
+          })
+        )
+      );
     }
 
     // If no session was created/found (e.g. empty cart with no prior session), bail

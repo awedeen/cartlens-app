@@ -367,7 +367,9 @@ export default function Index() {
         const existing = prev.find((s) => s.id === incoming.id);
         if (existing) {
           // Patch incoming events onto the full existing history — never drop events
-          const existingEvents: any[] = existing.events || [];
+          const existingEvents = existing.events || [];
+          // incoming comes from JSON.parse (SSE wire format) — typed as any[]
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const incomingEvents: any[] = incoming.events || [];
           const patched = [...existingEvents];
           for (const newEvt of incomingEvents) {

@@ -222,18 +222,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
       let total = 0;
       let items = 0;
-      const productQuantities: Record<string, number> = {};
 
       for (const evt of cartEvents) {
-        if (evt.eventType === "cart_add" && evt.variantId && evt.price && evt.quantity) {
-          productQuantities[evt.variantId] = (productQuantities[evt.variantId] || 0) + evt.quantity;
+        if (evt.eventType === "cart_add" && evt.price && evt.quantity) {
           total += evt.price * evt.quantity;
           items += evt.quantity;
-        } else if (evt.eventType === "cart_remove" && evt.variantId && evt.quantity) {
-          productQuantities[evt.variantId] = (productQuantities[evt.variantId] || 0) - evt.quantity;
-          if (evt.price) {
-            total -= evt.price * evt.quantity;
-          }
+        } else if (evt.eventType === "cart_remove" && evt.quantity) {
+          if (evt.price) total -= evt.price * evt.quantity;
           items -= evt.quantity;
         }
       }
