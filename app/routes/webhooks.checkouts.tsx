@@ -108,21 +108,23 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     where: { sessionId: cartSession.id, eventType: "checkout_item" },
   });
   if (existingCheckoutItemCount === 0) {
-    for (const item of lineItems) {
-      await prisma.cartEvent.create({
-        data: {
-          sessionId: cartSession.id,
-          eventType: "checkout_item",
-          productId: item.product_id?.toString(),
-          productTitle: item.title,
-          variantId: item.variant_id?.toString(),
-          variantTitle: item.variant_title,
-          quantity: item.quantity,
-          price: item.price ? parseFloat(item.price) : null,
-          timestamp: new Date(),
-        },
-      });
-    }
+    await Promise.all(
+      lineItems.map((item: any) =>
+        prisma.cartEvent.create({
+          data: {
+            sessionId: cartSession.id,
+            eventType: "checkout_item",
+            productId: item.product_id?.toString(),
+            productTitle: item.title,
+            variantId: item.variant_id?.toString(),
+            variantTitle: item.variant_title,
+            quantity: item.quantity,
+            price: item.price ? parseFloat(item.price) : null,
+            timestamp: new Date(),
+          },
+        })
+      )
+    );
   }
 
   // Broadcast update via SSE

@@ -276,7 +276,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     sseManager.broadcast(shop.id, "cart-update", {
       session: sessionWithEvents,
-      event,
     });
 
     return data({ success: true, sessionId: cartSession.id, eventId: event.id });
