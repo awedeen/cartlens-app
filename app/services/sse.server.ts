@@ -11,7 +11,7 @@ class SSEManager {
   public readonly instanceId: string;
 
   constructor() {
-    this.instanceId = `sse-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    this.instanceId = `sse-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
   }
 
   addClient(client: SSEClient): boolean {

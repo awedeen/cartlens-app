@@ -35,7 +35,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
     const stream = new ReadableStream({
       start(controller) {
-        const clientId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        const clientId = `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
 
         sseManager.addClient({
           id: clientId,

@@ -4,6 +4,7 @@
 
 import type { ActionFunctionArgs } from "react-router";
 import { data } from "react-router";
+import { Prisma } from "@prisma/client";
 import prisma from "../db.server";
 import { detectBot } from "../services/bot.server";
 // Geo now handled via Cloudflare headers — no external API needed
@@ -113,16 +114,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       return data({ error: "Invalid shop" }, { status: 403 });
     }
 
-    // Find or create Shop record
-    let shop = await prisma.shop.findUnique({
+    // Find or create Shop record — upsert is race-condition-safe
+    const shop = await prisma.shop.upsert({
       where: { shopifyDomain: safeShopDomain! },
+      create: { shopifyDomain: safeShopDomain! },
+      update: {},
     });
-
-    if (!shop) {
-      shop = await prisma.shop.create({
-        data: { shopifyDomain: safeShopDomain! },
-      });
-    }
 
     // Bot detection
     const botDetection = detectBot(userAgent);
@@ -139,55 +136,44 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     const resolvedBrowser = browser || parsedUA.browser;
     const resolvedOS = os || parsedUA.os;
 
-    // Find or create CartSession
-    let cartSession = await prisma.cartSession.findFirst({
-      where: {
+    // Find or create CartSession — upsert is race-condition-safe
+    // On conflict (same shopId+visitorId), only update mutable identity fields.
+    // undefined values are ignored by Prisma (field stays unchanged).
+    const cartSession = await prisma.cartSession.upsert({
+      where: { shopId_visitorId: { shopId: shop.id, visitorId: safeVisitorId! } },
+      create: {
         shopId: shop.id,
         visitorId: safeVisitorId!,
+        customerId,
+        customerEmail: safeCustomerEmail,
+        customerName: safeCustomerName,
+        referrerUrl: safeReferrerUrl,
+        landingPage: safeLandingPage,
+        utmSource: safeUtmSource,
+        utmMedium: safeUtmMedium,
+        utmCampaign: safeUtmCampaign,
+        ipAddress: resolvedIP,
+        city,
+        country,
+        countryCode,
+        deviceType,
+        browser: resolvedBrowser,
+        os: resolvedOS,
+        userAgent,
+        isSuspectedBot,
+        botReason: isSuspectedBot ? botDetection.reason : null,
       },
-      orderBy: { createdAt: "desc" },
+      update: {
+        // Only overwrite if new value is present — undefined = leave unchanged in Prisma
+        customerId: customerId || undefined,
+        customerEmail: safeCustomerEmail || undefined,
+        customerName: safeCustomerName || undefined,
+        city: city || undefined,
+        country: country || undefined,
+        countryCode: countryCode || undefined,
+        updatedAt: new Date(),
+      },
     });
-
-    if (!cartSession) {
-      cartSession = await prisma.cartSession.create({
-        data: {
-          shopId: shop.id,
-          visitorId: safeVisitorId!,
-          customerId,
-          customerEmail: safeCustomerEmail,
-          customerName: safeCustomerName,
-          referrerUrl: safeReferrerUrl,
-          landingPage: safeLandingPage,
-          utmSource: safeUtmSource,
-          utmMedium: safeUtmMedium,
-          utmCampaign: safeUtmCampaign,
-          ipAddress: resolvedIP,
-          city,
-          country,
-          countryCode,
-          deviceType,
-          browser: resolvedBrowser,
-          os: resolvedOS,
-          userAgent,
-          isSuspectedBot,
-          botReason: isSuspectedBot ? botDetection.reason : null,
-        },
-      });
-    } else {
-      // Update session with latest info
-      cartSession = await prisma.cartSession.update({
-        where: { id: cartSession.id },
-        data: {
-          customerId: customerId || cartSession.customerId,
-          customerEmail: customerEmail || cartSession.customerEmail,
-          customerName: customerName || cartSession.customerName,
-          city: city || cartSession.city,
-          country: country || cartSession.country,
-          countryCode: countryCode || cartSession.countryCode,
-          updatedAt: new Date(),
-        },
-      });
-    }
 
     // Create CartEvent
     const event = await prisma.cartEvent.create({
@@ -208,7 +194,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     });
 
     // Update session funnel status and cart summary
-    const updates: any = {};
+    const updates: Prisma.CartSessionUpdateInput = {};
 
     if (eventType === "cart_add") {
       updates.cartCreated = true;
