@@ -19,7 +19,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       billing.request({
         plan: PLANS.ESSENTIAL,
         isTest: process.env.NODE_ENV !== "production",
-        returnUrl: process.env.SHOPIFY_APP_URL || "",
+        returnUrl: `${process.env.SHOPIFY_APP_URL || ""}/app`,
       }),
   });
 
