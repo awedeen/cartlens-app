@@ -57,7 +57,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const nameFromBilling = [payload.billing_address?.first_name, payload.billing_address?.last_name].filter(Boolean).join(" ");
   const nameFromShipping = [payload.shipping_address?.first_name, payload.shipping_address?.last_name].filter(Boolean).join(" ");
   const resolvedName = nameFromCustomer || nameFromBilling || nameFromShipping;
-  if (resolvedName && (!cartSession.customerName || resolvedName.length > cartSession.customerName.length)) {
+  if (resolvedName && resolvedName !== cartSession.customerName) {
     updates.customerName = resolvedName;
   }
 
