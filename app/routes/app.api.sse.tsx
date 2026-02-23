@@ -1,8 +1,9 @@
 // Server-Sent Events endpoint for real-time cart updates
-// Uses shopId from query param — only accessible within the authenticated app iframe
+// Uses shopId from query param — shopId is a UUID only exposed to authenticated merchants via the app loader.
+// We skip authenticate.admin here because EventSource (native browser API) cannot pass session tokens.
+// Instead, we verify the shop exists and has an active Shopify session.
 
 import type { LoaderFunctionArgs } from "react-router";
-import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import sseManager from "../services/sse.server";
 
@@ -26,11 +27,12 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       return new Response("Shop not found", { status: 404 });
     }
 
-    // Verify the shopId belongs to the authenticated merchant
-    const { session } = await authenticate.admin(request);
-    if (session.shop !== shop.shopifyDomain) {
-      console.error(`[SSE Endpoint] shopId mismatch: session=${session.shop}, requested=${shop.shopifyDomain}`);
-      return new Response("Forbidden", { status: 403 });
+    // Verify the shop has an active Shopify session (still installed, not churned)
+    const activeSession = await prisma.session.findFirst({
+      where: { shop: shop.shopifyDomain },
+    });
+    if (!activeSession) {
+      return new Response("Unauthorized", { status: 403 });
     }
 
     const stream = new ReadableStream({
