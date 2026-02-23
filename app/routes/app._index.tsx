@@ -526,6 +526,12 @@ export default function Index() {
       const delta = e.eventType === "cart_add" ? (e.quantity || 0) : -(e.quantity || 0);
       if (existing) {
         existing.quantity += delta;
+        // Backfill image if the entry was created by a cart_remove (no image) and
+        // we're now processing the earlier cart_add which does have one.
+        // Events are sorted newest-first, so removes can appear before adds in this loop.
+        if (!existing.variantImage && e.variantImage) {
+          existing.variantImage = e.variantImage;
+        }
       } else {
         quantityMap.set(key, {
           quantity: delta,

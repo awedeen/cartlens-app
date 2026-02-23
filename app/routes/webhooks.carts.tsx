@@ -70,14 +70,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     }
 
     // Always find by cart token first (most reliable cart identifier)
-    let session = await prisma.cartSession.findFirst({
-      where: {
-        shopId: shopRecord.id,
-        visitorId: cartToken,
-      },
-      include: {
-        events: true,
-      },
+    // Use findUnique with the named compound key — consistent with the upserts below
+    let session = await prisma.cartSession.findUnique({
+      where: { shopId_visitorId: { shopId: shopRecord.id, visitorId: cartToken } },
+      include: { events: true },
     });
 
     if (topic === "CARTS_CREATE" && !session && lineItems.length > 0) {
