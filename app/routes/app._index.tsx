@@ -349,47 +349,53 @@ export default function Index() {
     });
 
     eventSource.addEventListener("cart-update", (e) => {
-      const update = JSON.parse(e.data);
+      try {
+        const update = JSON.parse(e.data);
+        // Guard against null session (race: session deleted between webhook write and SSE broadcast)
+        if (!update?.session) return;
 
-      triggerFlash(update.session?.id);
+        triggerFlash(update.session.id);
 
-      setSessions((prev) => {
-        const incoming = update.session;
-        const existing = prev.find((s) => s.id === incoming.id);
-        if (existing) {
-          // Patch incoming events onto the full existing history — never drop events
-          const existingEvents = existing.events || [];
-          // incoming comes from JSON.parse (SSE wire format) — typed as any[]
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const incomingEvents: any[] = incoming.events || [];
-          const patched = [...existingEvents];
-          for (const newEvt of incomingEvents) {
-            const idx = patched.findIndex((e) => e.id === newEvt.id);
-            if (idx >= 0) {
-              // Update in place; preserve image if SSE sent null
-              const old = patched[idx];
-              patched[idx] = (old?.variantImage && !newEvt.variantImage)
-                ? { ...newEvt, variantImage: old.variantImage }
-                : newEvt;
-            } else {
-              patched.push(newEvt); // new event — add it
+        setSessions((prev) => {
+          const incoming = update.session;
+          const existing = prev.find((s) => s.id === incoming.id);
+          if (existing) {
+            // Patch incoming events onto the full existing history — never drop events
+            const existingEvents = existing.events || [];
+            // incoming comes from JSON.parse (SSE wire format) — typed as any[]
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const incomingEvents: any[] = incoming.events || [];
+            const patched = [...existingEvents];
+            for (const newEvt of incomingEvents) {
+              const idx = patched.findIndex((e) => e.id === newEvt.id);
+              if (idx >= 0) {
+                // Update in place; preserve image if SSE sent null
+                const old = patched[idx];
+                patched[idx] = (old?.variantImage && !newEvt.variantImage)
+                  ? { ...newEvt, variantImage: old.variantImage }
+                  : newEvt;
+              } else {
+                patched.push(newEvt); // new event — add it
+              }
             }
-          }
-          patched.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+            patched.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
-          const updated = { ...incoming, events: patched };
-          // If this session is open in the detail panel, update it live
-          if (selectedSessionRef.current?.id === incoming.id) {
-            setSelectedSession(updated);
+            const updated = { ...incoming, events: patched };
+            // If this session is open in the detail panel, update it live
+            if (selectedSessionRef.current?.id === incoming.id) {
+              setSelectedSession(updated);
+            }
+            // Replace in-place then re-sort so active sessions bubble to top
+            return prev
+              .map((s) => (s.id === incoming.id ? updated : s))
+              .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+          } else {
+            return [incoming, ...prev];
           }
-          // Replace in-place then re-sort so active sessions bubble to top
-          return prev
-            .map((s) => (s.id === incoming.id ? updated : s))
-            .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-        } else {
-          return [incoming, ...prev];
-        }
-      });
+        });
+      } catch {
+        // Malformed SSE data — skip silently
+      }
     });
 
     eventSource.onerror = () => {

@@ -66,7 +66,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       const ids = toDelete.map(s => s.id);
 
       if (ids.length > 0) {
-        await prisma.cartEvent.deleteMany({ where: { sessionId: { in: ids } } });
+        // CartEvent rows cascade automatically on CartSession delete (onDelete: Cascade in schema)
         await prisma.cartSession.deleteMany({ where: { id: { in: ids } } });
         console.log(`[Compliance] customers_redact: deleted ${ids.length} session(s) for shop ${shop}`);
       } else {
