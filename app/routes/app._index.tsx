@@ -252,7 +252,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       const timezone = formData.get("timezone") as string;
       const botFilterEnabled = formData.get("botFilterEnabled") === "true";
       const rawThreshold = formData.get("highValueThreshold") as string;
-      const highValueThreshold = rawThreshold && rawThreshold !== "" ? parseFloat(rawThreshold) : null;
+      const parsedThreshold = rawThreshold && rawThreshold !== "" ? parseFloat(rawThreshold) : null;
+      const highValueThreshold = (parsedThreshold !== null && isFinite(parsedThreshold) && parsedThreshold >= 0) ? parsedThreshold : null;
 
       await prisma.shop.update({
         where: { id: shop.id },
@@ -324,6 +325,9 @@ export default function Index() {
     botFilterEnabled: data.settings.botFilterEnabled,
     highValueThreshold: data.settings.highValueThreshold != null ? String(data.settings.highValueThreshold) : "",
   });
+  // Use saved (committed) timezone for display — not the draft value in the form
+  const displayTimezone = savedSettings.timezone;
+
   const isSettingsDirty =
     timezone !== savedSettings.timezone ||
     botFilterEnabled !== savedSettings.botFilterEnabled ||
@@ -955,7 +959,7 @@ export default function Index() {
                         </div>
                         <div style={{ flex: 1 }}>
                           <div style={{ fontSize: "12px", color: "#6d7175", marginBottom: "4px" }}>
-                            {new Date(event.timestamp).toLocaleTimeString()}
+                            {new Date(event.timestamp).toLocaleTimeString(undefined, { timeZone: displayTimezone })}
                           </div>
                           <div style={{ fontSize: "14px", color: "#202223" }}>
                             {event.eventType === "cart_add" && (
@@ -1231,7 +1235,7 @@ export default function Index() {
                           })()}
                         </div>
                         <div style={{ fontSize: "12px", color: "#919eab", marginBottom: "10px" }}>
-                          Created {new Date(session.createdAt.toString()).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                          Created {new Date(session.createdAt.toString()).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: displayTimezone })}
                         </div>
 
                         <CollapsibleProducts session={session} />
