@@ -16,7 +16,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       const customerEmail = payload.customer?.email;
 
       // Look up shop record by domain to get the internal cuid
-      const shopRecord = await prisma.shop.findFirst({ where: { shopifyDomain: shop } });
+      const shopRecord = await prisma.shop.findUnique({ where: { shopifyDomain: shop } });
       if (!shopRecord) {
         console.log(`[Compliance] data_request: no shop record found for ${shop}`);
         return data({ customer_data: [] }, { status: 200 });
@@ -46,7 +46,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       const customerEmail = payload.customer?.email;
 
       // Look up shop record by domain to get the internal cuid
-      const shopRecord = await prisma.shop.findFirst({ where: { shopifyDomain: shop } });
+      const shopRecord = await prisma.shop.findUnique({ where: { shopifyDomain: shop } });
       if (!shopRecord) {
         console.log(`[Compliance] customers_redact: no shop record found for ${shop}`);
         return data({ deleted: 0 }, { status: 200 });
@@ -79,7 +79,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     case "SHOP_REDACT": {
       // Merchant uninstalled — delete all their data (48h after uninstall).
       // CartSession and CartEvent cascade on Shop delete via schema onDelete: Cascade.
-      const shopRecord = await prisma.shop.findFirst({ where: { shopifyDomain: shop } });
+      const shopRecord = await prisma.shop.findUnique({ where: { shopifyDomain: shop } });
 
       if (shopRecord) {
         await prisma.shop.delete({ where: { id: shopRecord.id } });
