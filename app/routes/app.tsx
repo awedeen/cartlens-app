@@ -3,10 +3,25 @@ import { Outlet, useLoaderData, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 
-import { authenticate } from "../shopify.server";
+import { authenticate, PLANS } from "../shopify.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  await authenticate.admin(request);
+  const { billing } = await authenticate.admin(request);
+
+  // Gate the app behind the Essential billing plan.
+  // Merchants get a 14-day free trial; after that they must subscribe.
+  // billing.require throws a redirect Response to Shopify's billing page
+  // if no active subscription exists — boundary.error handles it cleanly.
+  await billing.require({
+    plans: [PLANS.ESSENTIAL],
+    isTest: process.env.NODE_ENV !== "production",
+    onFailure: async () =>
+      billing.request({
+        plan: PLANS.ESSENTIAL,
+        isTest: process.env.NODE_ENV !== "production",
+        returnUrl: process.env.SHOPIFY_APP_URL || "",
+      }),
+  });
 
   // eslint-disable-next-line no-undef
   return { apiKey: process.env.SHOPIFY_API_KEY || "" };
