@@ -8,7 +8,7 @@ register(({ analytics, browser, settings, init }) => {
   const getVisitorId = (): string => {
     let visitorId = browser.cookie.get("cartlens_visitor_id");
     if (!visitorId) {
-      visitorId = `v_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      visitorId = `v_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
       browser.cookie.set("cartlens_visitor_id", visitorId);
     }
     return visitorId;
@@ -23,16 +23,9 @@ register(({ analytics, browser, settings, init }) => {
   } : {};
 
   // The app URL comes from pixel settings (set during webPixelCreate)
-  // In dev mode, this is the Cloudflare tunnel URL
   const appUrl = settings.app_url;
   const apiEndpoint = appUrl ? `${appUrl}/api/public/events` : null;
   const shopDomain = init.data?.shop?.myshopifyDomain || "";
-
-  // Log configuration for debugging
-  console.log("[CartLens Pixel] App URL:", appUrl);
-  console.log("[CartLens Pixel] API Endpoint:", apiEndpoint);
-  console.log("[CartLens Pixel] Shop:", shopDomain);
-  console.log("[CartLens Pixel] Customer:", customer ? `${customer.firstName} ${customer.lastName}` : "anonymous");
 
   if (!apiEndpoint) {
     console.error("[CartLens Pixel] No app_url configured — events will not be sent");
@@ -43,7 +36,7 @@ register(({ analytics, browser, settings, init }) => {
     const visitorId = getVisitorId();
 
     // Get device/browser info
-    const deviceType = browser.userAgent.match(/mobile/i) ? "mobile" : 
+    const deviceType = browser.userAgent.match(/mobile/i) ? "mobile" :
                        browser.userAgent.match(/tablet/i) ? "tablet" : "desktop";
 
     const payload = {
@@ -68,14 +61,14 @@ register(({ analytics, browser, settings, init }) => {
         body: JSON.stringify(payload),
       });
     } catch (error) {
-      console.error("[CartLens Pixel] Error sending event:", error);
+      // Silently fail — pixel events are best-effort
     }
   };
 
   // Subscribe to product_added_to_cart
   analytics.subscribe("product_added_to_cart", (event) => {
     const cartLine = event.data?.cartLine;
-    
+
     sendEvent("cart_add", {
       product: {
         id: cartLine?.merchandise?.product?.id,
@@ -94,7 +87,7 @@ register(({ analytics, browser, settings, init }) => {
   // Subscribe to product_removed_from_cart
   analytics.subscribe("product_removed_from_cart", (event) => {
     const cartLine = event.data?.cartLine;
-    
+
     sendEvent("cart_remove", {
       product: {
         id: cartLine?.merchandise?.product?.id,
@@ -109,17 +102,17 @@ register(({ analytics, browser, settings, init }) => {
     });
   });
 
-  // Subscribe to page_viewed
+  // Subscribe to page_viewed — used for checkout abandonment detection
   analytics.subscribe("page_viewed", (event) => {
     const context = event.context;
-    
+
     sendEvent("page_view", {
       pageUrl: context?.document?.location?.href,
       pageTitle: context?.document?.title,
       referrerUrl: context?.document?.referrer,
       landingPage: browser.sessionStorage.get("cartlens_landing_page") || context?.document?.location?.href,
-      utmSource: context?.document?.location?.search?.includes("utm_source") 
-        ? new URLSearchParams(context?.document?.location?.search).get("utm_source") 
+      utmSource: context?.document?.location?.search?.includes("utm_source")
+        ? new URLSearchParams(context?.document?.location?.search).get("utm_source")
         : null,
       utmMedium: context?.document?.location?.search?.includes("utm_medium")
         ? new URLSearchParams(context?.document?.location?.search).get("utm_medium")
@@ -135,39 +128,10 @@ register(({ analytics, browser, settings, init }) => {
     }
   });
 
-  // Subscribe to product_viewed
-  analytics.subscribe("product_viewed", (event) => {
-    const product = event.data?.productVariant?.product;
-    
-    sendEvent("product_view", {
-      product: {
-        id: product?.id,
-        title: product?.title,
-      },
-    });
-  });
-
-  // Subscribe to collection_viewed
-  analytics.subscribe("collection_viewed", (event) => {
-    const collection = event.data?.collection;
-    
-    sendEvent("collection_view", {
-      collection: {
-        id: collection?.id,
-        title: collection?.title,
-      },
-    });
-  });
-
-  // Subscribe to cart_viewed
-  analytics.subscribe("cart_viewed", (event) => {
-    sendEvent("cart_view", {});
-  });
-
   // Subscribe to checkout_started
   analytics.subscribe("checkout_started", (event) => {
     const checkout = event.data?.checkout;
-    
+
     sendEvent("checkout_started", {
       customerId: checkout?.customer?.id,
       customerEmail: checkout?.email,
@@ -180,7 +144,7 @@ register(({ analytics, browser, settings, init }) => {
   // Subscribe to checkout_completed
   analytics.subscribe("checkout_completed", (event) => {
     const checkout = event.data?.checkout;
-    
+
     sendEvent("checkout_completed", {
       orderId: checkout?.order?.id,
       customerId: checkout?.customer?.id,
@@ -191,15 +155,6 @@ register(({ analytics, browser, settings, init }) => {
       billingCity: checkout?.billingAddress?.city || null,
       billingCountry: checkout?.billingAddress?.country || null,
       billingCountryCode: checkout?.billingAddress?.countryCode || null,
-    });
-  });
-
-  // Subscribe to search_submitted
-  analytics.subscribe("search_submitted", (event) => {
-    const searchResult = event.data?.searchResult;
-    
-    sendEvent("search", {
-      query: searchResult?.query,
     });
   });
 });
