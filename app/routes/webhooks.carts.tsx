@@ -65,8 +65,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     let cartTotal = 0;
     let itemCount = 0;
     for (const item of lineItems) {
-      cartTotal += parseFloat(item.price) * item.quantity;
-      itemCount += item.quantity;
+      cartTotal += (item.price ? parseFloat(item.price) : 0) * (item.quantity || 0);
+      itemCount += item.quantity || 0;
     }
 
     // Always find by cart token first (most reliable cart identifier)
@@ -114,7 +114,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
               variantTitle: item.variant_title,
               quantity: item.quantity,
               variantImage: createImages[idx],
-              price: parseFloat(item.price),
+              price: item.price ? parseFloat(item.price) : null,
             },
           })
         )
@@ -166,35 +166,42 @@ export const action = async ({ request }: ActionFunctionArgs) => {
               variantTitle: item.variant_title,
               quantity: quantity - oldQty,
               variantImage: additionImages[idx],
-              price: parseFloat(item.price),
+              price: item.price ? parseFloat(item.price) : null,
             },
           })
         )
       );
 
-      // Detect removals (items gone or decreased quantity)
-      for (const [key, oldQty] of currentState) {
-        const newEntry = newState.get(key);
-        const newQty = newEntry?.quantity || 0;
-        if (oldQty > 0 && newQty < oldQty) {
-          // Find the product info from the last add event for this variant
+      // Detect removals (items gone or decreased quantity) — parallel writes
+      const removals = Array.from(currentState.entries())
+        .filter(([key, oldQty]) => {
+          const newQty = newState.get(key)?.quantity || 0;
+          return oldQty > 0 && newQty < oldQty;
+        })
+        .map(([key, oldQty]) => {
+          const newQty = newState.get(key)?.quantity || 0;
           const lastAdd = lastEvents.find(
             (e) => (e.variantId === key || e.productId === key) && e.eventType === "cart_add"
           );
-          await prisma.cartEvent.create({
+          return { key, removedQty: oldQty - newQty, lastAdd };
+        });
+
+      await Promise.all(
+        removals.map(({ key, removedQty, lastAdd }) =>
+          prisma.cartEvent.create({
             data: {
-              sessionId: session.id,
+              sessionId: session!.id,
               eventType: "cart_remove",
               productId: lastAdd?.productId || key,
               productTitle: lastAdd?.productTitle || "Unknown Product",
               variantId: lastAdd?.variantId || key,
               variantTitle: lastAdd?.variantTitle,
-              quantity: oldQty - newQty,
+              quantity: removedQty,
               price: lastAdd?.price || 0,
             },
-          });
-        }
-      }
+          })
+        )
+      );
 
       // Update session totals
       session = await prisma.cartSession.update({
@@ -242,7 +249,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
               variantTitle: item.variant_title,
               quantity: item.quantity,
               variantImage: newSessionImages[idx],
-              price: parseFloat(item.price),
+              price: item.price ? parseFloat(item.price) : null,
             },
           })
         )
