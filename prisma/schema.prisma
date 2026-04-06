@@ -65,6 +65,8 @@ model CartSession {
   utmSource     String?
   utmMedium     String?
   utmCampaign   String?
+  utmContent    String?
+  utmId         String?
 
   // Visitor info
   ipAddress     String?

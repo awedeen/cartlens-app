@@ -854,8 +854,40 @@ export default function Index() {
                   {selectedSession.landingPage && (
                     <div>
                       <div style={{ fontSize: "12px", color: "#6d7175", marginBottom: "4px" }}>Landing Page</div>
-                      <div style={{ fontSize: "14px", color: "#202223", wordBreak: "break-all" }}>
+                      <div style={{ fontSize: "14px", color: "#202223", wordBreak: "break-all", fontFamily: "monospace", fontSize: "12px" }}>
                         {selectedSession.landingPage}
+                      </div>
+                    </div>
+                  )}
+                  {(selectedSession.utmSource || selectedSession.utmMedium || selectedSession.utmCampaign || selectedSession.utmContent || selectedSession.utmId) && (
+                    <div style={{ gridColumn: "1 / -1" }}>
+                      <div style={{ fontSize: "12px", color: "#6d7175", marginBottom: "6px" }}>Traffic Source</div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                        {selectedSession.utmSource && (
+                          <span style={{ fontSize: "12px", background: "#f1f8ff", border: "1px solid #c8e1ff", color: "#0366d6", padding: "2px 8px", borderRadius: "4px" }}>
+                            source: {selectedSession.utmSource}
+                          </span>
+                        )}
+                        {selectedSession.utmMedium && (
+                          <span style={{ fontSize: "12px", background: "#f1f8ff", border: "1px solid #c8e1ff", color: "#0366d6", padding: "2px 8px", borderRadius: "4px" }}>
+                            medium: {selectedSession.utmMedium}
+                          </span>
+                        )}
+                        {selectedSession.utmCampaign && (
+                          <span style={{ fontSize: "12px", background: "#f1f8ff", border: "1px solid #c8e1ff", color: "#0366d6", padding: "2px 8px", borderRadius: "4px" }}>
+                            campaign: {selectedSession.utmCampaign}
+                          </span>
+                        )}
+                        {selectedSession.utmContent && (
+                          <span style={{ fontSize: "12px", background: "#f1f8ff", border: "1px solid #c8e1ff", color: "#0366d6", padding: "2px 8px", borderRadius: "4px" }}>
+                            content: {selectedSession.utmContent}
+                          </span>
+                        )}
+                        {selectedSession.utmId && (
+                          <span style={{ fontSize: "12px", background: "#f1f8ff", border: "1px solid #c8e1ff", color: "#0366d6", padding: "2px 8px", borderRadius: "4px" }}>
+                            id: {selectedSession.utmId}
+                          </span>
+                        )}
                       </div>
                     </div>
                   )}
@@ -1234,9 +1266,24 @@ export default function Index() {
                             } catch { return null; }
                           })()}
                         </div>
-                        <div style={{ fontSize: "12px", color: "#919eab", marginBottom: "10px" }}>
+                        <div style={{ fontSize: "12px", color: "#919eab", marginBottom: session.utmSource || session.referrerUrl ? "6px" : "10px" }}>
                           Created {new Date(session.createdAt.toString()).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: displayTimezone })}
                         </div>
+
+                        {(session.utmSource || session.referrerUrl) && (
+                          <div style={{ fontSize: "11px", color: "#6d7175", marginBottom: "10px", display: "flex", alignItems: "center", gap: "4px" }}>
+                            <span style={{ color: "#919eab" }}>via</span>
+                            {session.utmSource ? (
+                              <span style={{ fontWeight: 600, color: "#0366d6" }}>
+                                {session.utmSource}{session.utmMedium ? ` / ${session.utmMedium}` : ""}
+                              </span>
+                            ) : (
+                              <span style={{ color: "#6d7175", maxWidth: "200px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                {(() => { try { return new URL(session.referrerUrl!).hostname; } catch { return session.referrerUrl; } })()}
+                              </span>
+                            )}
+                          </div>
+                        )}
 
                         <CollapsibleProducts session={session} />
                       </div>

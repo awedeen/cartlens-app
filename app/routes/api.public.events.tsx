@@ -76,6 +76,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       utmSource,
       utmMedium,
       utmCampaign,
+      utmContent,
+      utmId,
       deviceType,
       browser,
       os,
@@ -99,6 +101,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     const safeUtmSource = sanitizeString(utmSource, 100);
     const safeUtmMedium = sanitizeString(utmMedium, 100);
     const safeUtmCampaign = sanitizeString(utmCampaign, 255);
+    const safeUtmContent = sanitizeString(utmContent, 255);
+    const safeUtmId = sanitizeString(utmId, 255);
 
     // Validate required fields
     if (!safeShopDomain || !safeVisitorId || !eventType) {
@@ -155,6 +159,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         utmSource: safeUtmSource,
         utmMedium: safeUtmMedium,
         utmCampaign: safeUtmCampaign,
+        utmContent: safeUtmContent,
+        utmId: safeUtmId,
         ipAddress: resolvedIP,
         city,
         country,
