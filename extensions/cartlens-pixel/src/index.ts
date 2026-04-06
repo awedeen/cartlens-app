@@ -31,31 +31,20 @@ register(({ analytics, browser, settings, init }) => {
     console.error("[CartLens Pixel] No app_url configured — events will not be sent");
   }
 
-  // Capture UTMs + referrer + landing page immediately on pixel load
-  // This ensures we don't miss UTMs if cart_add fires before page_view
-  const currentUrl = init.data?.shop?.url || "";
-  const currentSearch = (() => {
-    try { return new URL(currentUrl).search; } catch { return ""; }
-  })();
-  const currentParams = new URLSearchParams(currentSearch);
-
-  const initialUtmSource = currentParams.get("utm_source") || null;
-  const initialUtmMedium = currentParams.get("utm_medium") || null;
-  const initialUtmCampaign = currentParams.get("utm_campaign") || null;
-  const initialUtmContent = currentParams.get("utm_content") || null;
-  const initialUtmId = currentParams.get("utm_id") || currentParams.get("fbclid") || null;
-
-  // Persist landing page + UTMs in sessionStorage on first visit
-  if (!browser.sessionStorage.get("cartlens_landing_page") && currentUrl) {
-    browser.sessionStorage.set("cartlens_landing_page", currentUrl);
-  }
-  if (!browser.sessionStorage.get("cartlens_utm_source") && initialUtmSource) {
-    browser.sessionStorage.set("cartlens_utm_source", initialUtmSource);
-    if (initialUtmMedium) browser.sessionStorage.set("cartlens_utm_medium", initialUtmMedium);
-    if (initialUtmCampaign) browser.sessionStorage.set("cartlens_utm_campaign", initialUtmCampaign);
-    if (initialUtmContent) browser.sessionStorage.set("cartlens_utm_content", initialUtmContent);
-    if (initialUtmId) browser.sessionStorage.set("cartlens_utm_id", initialUtmId);
-  }
+  // Helper: capture UTMs from a URL search string and persist in sessionStorage
+  // Must be called from inside an event handler (sessionStorage not available at top level)
+  const captureUtmsFromSearch = (search: string) => {
+    if (!search || browser.sessionStorage.get("cartlens_utm_source")) return;
+    const params = new URLSearchParams(search);
+    const src = params.get("utm_source");
+    if (src) {
+      browser.sessionStorage.set("cartlens_utm_source", src);
+      const med = params.get("utm_medium"); if (med) browser.sessionStorage.set("cartlens_utm_medium", med);
+      const cam = params.get("utm_campaign"); if (cam) browser.sessionStorage.set("cartlens_utm_campaign", cam);
+      const con = params.get("utm_content"); if (con) browser.sessionStorage.set("cartlens_utm_content", con);
+      const uid = params.get("utm_id") || params.get("fbclid"); if (uid) browser.sessionStorage.set("cartlens_utm_id", uid);
+    }
+  };
 
   // Helper to send events to backend
   const sendEvent = async (eventType: string, data: any = {}) => {
@@ -72,7 +61,7 @@ register(({ analytics, browser, settings, init }) => {
       timestamp: new Date().toISOString(),
       deviceType,
       userAgent: browser.userAgent,
-      // Always include UTMs + landing page from session (captured at pixel load)
+      // Include UTMs + landing page from sessionStorage (populated by page_viewed handler)
       utmSource: browser.sessionStorage.get("cartlens_utm_source") || null,
       utmMedium: browser.sessionStorage.get("cartlens_utm_medium") || null,
       utmCampaign: browser.sessionStorage.get("cartlens_utm_campaign") || null,
@@ -101,6 +90,13 @@ register(({ analytics, browser, settings, init }) => {
   // Subscribe to product_added_to_cart
   analytics.subscribe("product_added_to_cart", (event) => {
     const cartLine = event.data?.cartLine;
+    // Capture UTMs from current URL in case page_viewed hasn't fired yet
+    const search = event.context?.document?.location?.search || "";
+    captureUtmsFromSearch(search);
+    if (!browser.sessionStorage.get("cartlens_landing_page")) {
+      const href = event.context?.document?.location?.href;
+      if (href) browser.sessionStorage.set("cartlens_landing_page", href);
+    }
 
     sendEvent("cart_add", {
       product: {
@@ -141,23 +137,13 @@ register(({ analytics, browser, settings, init }) => {
     const href = context?.document?.location?.href;
     const referrer = context?.document?.referrer || null;
 
-    // Update landing page if not already set (first page in session)
+    // Capture UTMs from current page URL (first page in session wins)
+    const search = context?.document?.location?.search || "";
+    captureUtmsFromSearch(search);
+
+    // Store landing page if not already set
     if (!browser.sessionStorage.get("cartlens_landing_page") && href) {
       browser.sessionStorage.set("cartlens_landing_page", href);
-    }
-
-    // Capture UTMs from current URL if not already captured at load time
-    const search = context?.document?.location?.search || "";
-    if (search && !browser.sessionStorage.get("cartlens_utm_source")) {
-      const params = new URLSearchParams(search);
-      const src = params.get("utm_source");
-      if (src) {
-        browser.sessionStorage.set("cartlens_utm_source", src);
-        const med = params.get("utm_medium"); if (med) browser.sessionStorage.set("cartlens_utm_medium", med);
-        const cam = params.get("utm_campaign"); if (cam) browser.sessionStorage.set("cartlens_utm_campaign", cam);
-        const con = params.get("utm_content"); if (con) browser.sessionStorage.set("cartlens_utm_content", con);
-        const uid = params.get("utm_id") || params.get("fbclid"); if (uid) browser.sessionStorage.set("cartlens_utm_id", uid);
-      }
     }
 
     sendEvent("page_view", {
