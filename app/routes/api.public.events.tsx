@@ -2,8 +2,23 @@
 // This route is OUTSIDE the authenticated app layout (no "app." prefix)
 // and does NOT require Shopify authentication
 
-import type { ActionFunctionArgs } from "react-router";
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { data } from "react-router";
+
+// CORS headers for Web Pixel sandbox — pixel runs from extensions.shopifycdn.com
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+};
+
+// Handle CORS preflight (OPTIONS) — required for pixel fetch with Content-Type: application/json
+export const loader = async ({ request }: LoaderFunctionArgs) => {
+  if (request.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: CORS_HEADERS });
+  }
+  return new Response("Method not allowed", { status: 405 });
+};
 import { Prisma } from "@prisma/client";
 import prisma from "../db.server";
 import { detectBot } from "../services/bot.server";
@@ -35,7 +50,7 @@ function parseUserAgent(ua: string | null): { browser: string | null; os: string
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   if (request.method !== "POST") {
-    return data({ error: "Method not allowed" }, { status: 405 });
+    return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } });
   }
 
   // Rate limit by IP — 120 requests/minute covers normal pixel activity.
@@ -47,7 +62,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
     "unknown";
   if (!checkRateLimit(clientIp, 120, 60_000)) {
-    return data({ error: "Too many requests" }, { status: 429 });
+    return data({ error: "Too many requests" }, { status: 429, headers: CORS_HEADERS });
   }
 
   try {
@@ -106,7 +121,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     // Validate required fields
     if (!safeShopDomain || !safeVisitorId || !eventType) {
-      return data({ error: "Missing required fields: shopDomain, visitorId, eventType" }, { status: 400 });
+      return data({ error: "Missing required fields: shopDomain, visitorId, eventType" }, { status: 400, headers: CORS_HEADERS });
     }
 
     // Basic origin validation — referer header is optional and stripped by some browsers/extensions
@@ -118,7 +133,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     if (!session) {
       console.warn(`[Public API] Invalid shop domain: ${safeShopDomain}`);
-      return data({ error: "Invalid shop" }, { status: 403 });
+      return data({ error: "Invalid shop" }, { status: 403, headers: CORS_HEADERS });
     }
 
     // Find or create Shop record — upsert is race-condition-safe
@@ -284,9 +299,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       session: sessionWithEvents,
     });
 
-    return data({ success: true, sessionId: cartSession.id, eventId: event.id });
+    return data({ success: true, sessionId: cartSession.id, eventId: event.id }, { headers: CORS_HEADERS });
   } catch (error) {
     console.error("[Public API Events] Error:", error);
-    return data({ error: "Internal server error" }, { status: 500 });
+    return data({ error: "Internal server error" }, { status: 500, headers: CORS_HEADERS });
   }
 };
