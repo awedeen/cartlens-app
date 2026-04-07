@@ -90,12 +90,20 @@ register(({ analytics, browser, settings, init }) => {
   // Subscribe to product_added_to_cart
   analytics.subscribe("product_added_to_cart", (event) => {
     const cartLine = event.data?.cartLine;
-    // Capture UTMs from current URL in case page_viewed hasn't fired yet
-    const search = event.context?.document?.location?.search || "";
+    // Capture UTMs — try event context first, then init context (init has full URL at page render)
+    const search = event.context?.document?.location?.search
+      || (init as any)?.context?.document?.location?.search
+      || "";
+    const href = event.context?.document?.location?.href
+      || (init as any)?.context?.document?.location?.href
+      || "";
     captureUtmsFromSearch(search);
-    if (!browser.sessionStorage.get("cartlens_landing_page")) {
-      const href = event.context?.document?.location?.href;
-      if (href) browser.sessionStorage.set("cartlens_landing_page", href);
+    // Also try parsing from full href in case search is stripped
+    if (!browser.sessionStorage.get("cartlens_utm_source") && href) {
+      try { captureUtmsFromSearch(new URL(href).search); } catch {}
+    }
+    if (!browser.sessionStorage.get("cartlens_landing_page") && href) {
+      browser.sessionStorage.set("cartlens_landing_page", href);
     }
 
     sendEvent("cart_add", {
@@ -140,6 +148,10 @@ register(({ analytics, browser, settings, init }) => {
     // Capture UTMs from current page URL (first page in session wins)
     const search = context?.document?.location?.search || "";
     captureUtmsFromSearch(search);
+    // Also try parsing from href directly in case search is empty
+    if (!browser.sessionStorage.get("cartlens_utm_source") && href) {
+      try { captureUtmsFromSearch(new URL(href).search); } catch {}
+    }
 
     // Store landing page if not already set
     if (!browser.sessionStorage.get("cartlens_landing_page") && href) {
