@@ -217,6 +217,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         city: city || undefined,
         country: country || undefined,
         countryCode: countryCode || undefined,
+        // UTMs: update if present (backfills sessions that existed before a UTM visit)
+        utmSource: safeUtmSource || undefined,
+        utmMedium: safeUtmMedium || undefined,
+        utmCampaign: safeUtmCampaign || undefined,
+        utmContent: safeUtmContent || undefined,
+        utmId: safeUtmId || undefined,
+        // Landing page: only set if not already set (preserve original entry page)
+        landingPage: safeLandingPage || undefined,
         updatedAt: new Date(),
       },
     });
