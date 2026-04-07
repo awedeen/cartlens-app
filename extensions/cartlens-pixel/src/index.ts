@@ -101,15 +101,12 @@ register(({ analytics, browser, settings, init }) => {
   // Subscribe to product_added_to_cart
   analytics.subscribe("product_added_to_cart", (event) => {
     const cartLine = event.data?.cartLine;
-    // Capture UTMs — try all available URL sources
-    const href = event.context?.document?.location?.href
-      || (init as any)?.context?.document?.location?.href
+    // Capture UTMs — try all available URL sources (window.location is the correct pixel API path)
+    const href = event.context?.window?.location?.href
+      || event.context?.document?.location?.href
+      || (init as any)?.context?.window?.location?.href
       || "";
-    const search = event.context?.document?.location?.search
-      || (init as any)?.context?.document?.location?.search
-      || "";
-    // Try href first (full URL), fall back to search string
-    captureUtmsFromUrl(href || search);
+    captureUtmsFromUrl(href);
     if (!browser.sessionStorage.get("cartlens_landing_page") && href) {
       browser.sessionStorage.set("cartlens_landing_page", href);
     }
@@ -153,12 +150,13 @@ register(({ analytics, browser, settings, init }) => {
     const href = context?.document?.location?.href;
     const referrer = context?.document?.referrer || null;
 
-    // Capture UTMs from current page URL
-    captureUtmsFromUrl(href || context?.document?.location?.search || "");
+    // Capture UTMs from current page URL (window.location is the correct pixel API path)
+    const pageHref = context?.window?.location?.href || context?.document?.location?.href || href || "";
+    captureUtmsFromUrl(pageHref);
 
     // Store landing page if not already set
-    if (!browser.sessionStorage.get("cartlens_landing_page") && href) {
-      browser.sessionStorage.set("cartlens_landing_page", href);
+    if (!browser.sessionStorage.get("cartlens_landing_page") && pageHref) {
+      browser.sessionStorage.set("cartlens_landing_page", pageHref);
     }
 
     sendEvent("page_view", {
