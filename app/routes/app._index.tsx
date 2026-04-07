@@ -1569,58 +1569,7 @@ export default function Index() {
             ))}
           </div>
 
-          {/* Funnel */}
-          <div style={{
-            background: "#ffffff",
-            border: "1px solid #e3e3e3",
-            borderRadius: "8px",
-            padding: "16px",
-            marginBottom: "20px",
-            boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
-          }}>
-            <h3 style={{ fontSize: "15px", fontWeight: 600, color: "#202223", marginBottom: "14px" }}>
-              Funnel — Last {reportRange} Days
-            </h3>
-            <div style={{ marginBottom: "8px", fontSize: "13px", color: "#6d7175" }}>
-              {rCarts} carts total
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-              {[
-                {
-                  label: "Checkout Started",
-                  value: rCheckouts,
-                  total: rCarts,
-                  barPercent: rCheckoutRate,
-                  color: "#ffc453"
-                },
-                {
-                  label: "Order Placed",
-                  value: rOrders,
-                  total: rCarts,
-                  barPercent: rConversionRate,
-                  color: "#5C6AC4"
-                }
-              ].map((stage, idx) => (
-                <div key={idx}>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
-                    <span style={{ fontSize: "13px", color: "#202223" }}>{stage.label}</span>
-                    <span style={{ fontSize: "13px", color: "#6d7175" }}>
-                      {stage.value} of {stage.total}
-                      <span style={{ color: "#adb0b3", fontSize: "12px" }}> · {stage.barPercent.toFixed(1)}%</span>
-                    </span>
-                  </div>
-                  <div style={{ width: "100%", height: "8px", background: "#e3e3e3", borderRadius: "4px", overflow: "hidden" }}>
-                    <div style={{
-                      width: `${stage.barPercent}%`,
-                      height: "100%",
-                      background: stage.color,
-                      transition: "width 0.3s"
-                    }} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+
 
           {/* Top Products */}
           <div style={{
