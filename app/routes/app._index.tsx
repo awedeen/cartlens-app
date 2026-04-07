@@ -419,13 +419,20 @@ export default function Index() {
     if (!src && utmId?.startsWith("FB") || (!src && utmId?.length && utmId.length > 20))
       return { label: "Paid Social", color: "#1877f2", bg: "#e7f0fd" };
 
-    // Meta/Facebook/Instagram — covers fb, ig, an (Audience Network), messenger, {{site_source_name}} values
-    const isMetaSrc = ["meta", "facebook", "instagram", "fb", "ig", "an", "messenger"].some(s => src === s || src.includes(s));
     const isPaidMed = ["cpc", "paid", "paid_social", "paidsocial"].includes(med);
     const isSocialMed = ["paid_social", "paidsocial", "social"].includes(med);
 
-    if (isMetaSrc && (isPaidMed || isSocialMed || med === ""))
-      return { label: "Paid Social", color: "#1877f2", bg: "#e7f0fd" };
+    // Facebook specifically
+    if ((src === "fb" || src === "facebook" || src.startsWith("fb.") || src.startsWith("facebook.")) && (isPaidMed || isSocialMed || med === ""))
+      return { label: "Facebook Ads", color: "#1877f2", bg: "#e7f0fd" };
+
+    // Instagram specifically
+    if ((src === "ig" || src === "instagram") && (isPaidMed || isSocialMed || med === ""))
+      return { label: "Instagram Ads", color: "#c13584", bg: "#fce8f3" };
+
+    // Meta Audience Network, Messenger, or generic meta
+    if ((src === "an" || src === "messenger" || src === "meta" || src.includes("meta")) && (isPaidMed || isSocialMed || med === ""))
+      return { label: "Meta Ads", color: "#1877f2", bg: "#e7f0fd" };
 
     // TikTok paid (check before generic social)
     if (src.includes("tiktok") && (isPaidMed || isSocialMed))
