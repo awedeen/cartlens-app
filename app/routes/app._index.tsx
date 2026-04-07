@@ -1646,7 +1646,7 @@ export default function Index() {
                       {sortedProducts.map((product, idx) => {
                         const isExpanded = expandedProducts.has(product.productId);
                         const variants = rVariantMap[product.productId] ? Object.entries(rVariantMap[product.productId]).map(([vid, v]) => ({ variantId: vid, variantTitle: v.variantTitle, cartAdds: v.cartAdds, conversions: v.conversions, conversionRate: v.cartAdds > 0 ? (v.conversions / v.cartAdds) * 100 : 0 })).sort((a, b) => b.cartAdds - a.cartAdds) : [];
-                        const hasVariants = variants.length > 1 || (variants.length === 1 && variants[0].variantTitle !== null);
+                        const hasVariants = variants.some(v => v.variantTitle !== null && v.variantTitle !== "Default Title");
                         return (
                           <>
                             <tr key={product.productId} style={{ borderBottom: isExpanded ? "none" : (idx < sortedProducts.length - 1 ? "1px solid #f1f1f1" : "none") }}>
