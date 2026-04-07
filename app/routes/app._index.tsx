@@ -340,6 +340,10 @@ export default function Index() {
     setHighValueThreshold(savedSettings.highValueThreshold);
   };
   const [reportRange, setReportRange] = useState<7 | 30 | 90>(30);
+  const [channelSort, setChannelSort] = useState<{ col: string; dir: 'desc' | 'asc' }>({ col: 'carts', dir: 'desc' });
+  const [campaignSort, setCampaignSort] = useState<{ col: string; dir: 'desc' | 'asc' }>({ col: 'cartAdds', dir: 'desc' });
+  const [productSort, setProductSort] = useState<{ col: string; dir: 'desc' | 'asc' }>({ col: 'cartAdds', dir: 'desc' });
+  const [locationSort, setLocationSort] = useState<{ col: string; dir: 'desc' | 'asc' }>({ col: 'sessions', dir: 'desc' });
 
   // Connect to SSE for real-time updates
   useEffect(() => {
@@ -1605,40 +1609,46 @@ export default function Index() {
               <div style={{ fontSize: "14px", color: "#6d7175", padding: "20px 16px", textAlign: "center" }}>
                 No product data yet
               </div>
-            ) : (
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead>
-                  <tr style={{ borderTop: "1px solid #e3e3e3", borderBottom: "1px solid #e3e3e3" }}>
-                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "left" }}>Product</th>
-                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Cart adds</th>
-                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Checkouts</th>
-                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Orders</th>
-                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Conv. rate</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rTopProducts.map((product, idx) => (
-                    <tr key={product.productId} style={{ borderBottom: idx < rTopProducts.length - 1 ? "1px solid #f1f1f1" : "none" }}>
-                      <td style={{ padding: "10px 16px", fontSize: "13px", fontWeight: 500, color: "#202223", maxWidth: "200px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {product.productTitle}
-                      </td>
-                      <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-                        {product.cartAdds}
-                      </td>
-                      <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-                        {product.checkouts}
-                      </td>
-                      <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-                        {product.conversions}
-                      </td>
-                      <td style={{ padding: "10px 16px", fontSize: "13px", color: "#008060", textAlign: "right", fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>
-                        {product.conversionRate.toFixed(1)}%
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+            ) : (() => {
+                const sortedProducts = [...rTopProducts].sort((a, b) => {
+                  const mult = productSort.dir === 'desc' ? -1 : 1;
+                  const col = productSort.col as keyof typeof a;
+                  return mult * ((a[col] as number) - (b[col] as number));
+                });
+                const mkTh = (label: string, col: string) => {
+                  const active = productSort.col === col;
+                  return (
+                    <th key={col} onClick={() => setProductSort(s => s.col === col ? { col, dir: s.dir === 'desc' ? 'asc' : 'desc' } : { col, dir: 'desc' })}
+                      style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: active ? "#202223" : "#6d7175", textAlign: "right", whiteSpace: "nowrap", cursor: "pointer", userSelect: "none" }}>
+                      {label}{active ? (productSort.dir === 'desc' ? ' ↓' : ' ↑') : ''}
+                    </th>
+                  );
+                };
+                return (
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr style={{ borderTop: "1px solid #e3e3e3", borderBottom: "1px solid #e3e3e3" }}>
+                        <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "left" }}>Product</th>
+                        {mkTh("Cart adds", "cartAdds")}
+                        {mkTh("Checkouts", "checkouts")}
+                        {mkTh("Orders", "conversions")}
+                        {mkTh("Conv. rate", "conversionRate")}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sortedProducts.map((product, idx) => (
+                        <tr key={product.productId} style={{ borderBottom: idx < sortedProducts.length - 1 ? "1px solid #f1f1f1" : "none" }}>
+                          <td style={{ padding: "10px 16px", fontSize: "13px", fontWeight: 500, color: "#202223", maxWidth: "200px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{product.productTitle}</td>
+                          <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{product.cartAdds}</td>
+                          <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{product.checkouts}</td>
+                          <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{product.conversions}</td>
+                          <td style={{ padding: "10px 16px", fontSize: "13px", color: "#008060", textAlign: "right", fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>{product.conversionRate.toFixed(1)}%</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                );
+              })()}
           </div>
 
           {/* Top Referrers */}
@@ -1705,19 +1715,40 @@ export default function Index() {
                 <h3 style={{ fontSize: "15px", fontWeight: 600, color: "#202223", margin: 0 }}>Channel Performance</h3>
                 <span style={{ fontSize: "12px", color: "#919eab" }}>by traffic source</span>
               </div>
+              {(() => {
+                const sortedChannels = [...rChannelFunnel].sort((a, b) => {
+                  const mult = channelSort.dir === 'desc' ? -1 : 1;
+                  if (channelSort.col === 'convRate') {
+                    const aRate = a.carts > 0 ? a.orders / a.carts : 0;
+                    const bRate = b.carts > 0 ? b.orders / b.carts : 0;
+                    return mult * (aRate - bRate);
+                  }
+                  const col = channelSort.col as keyof typeof a;
+                  return mult * ((a[col] as number) - (b[col] as number));
+                });
+                const mkChannelTh = (label: string, col: string, align: 'left' | 'right' = 'right') => {
+                  const active = channelSort.col === col;
+                  return (
+                    <th
+                      onClick={() => setChannelSort(s => s.col === col ? { col, dir: s.dir === 'desc' ? 'asc' : 'desc' } : { col, dir: 'desc' })}
+                      style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: active ? "#202223" : "#6d7175", textAlign: align, whiteSpace: "nowrap", cursor: "pointer", userSelect: "none" }}
+                    >{label}{active ? (channelSort.dir === 'desc' ? ' ↓' : ' ↑') : ''}</th>
+                  );
+                };
+                return (
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
                   <tr style={{ borderTop: "1px solid #e3e3e3", borderBottom: "1px solid #e3e3e3" }}>
                     <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "left" }}>Channel</th>
-                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Carts</th>
-                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Checkouts</th>
-                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Orders</th>
-                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Conv. rate</th>
+                    {mkChannelTh("Carts", "carts")}
+                    {mkChannelTh("Checkouts", "checkouts")}
+                    {mkChannelTh("Orders", "orders")}
+                    {mkChannelTh("Conv. rate", "convRate")}
                   </tr>
                 </thead>
                 <tbody>
-                  {rChannelFunnel.map((ch, idx) => (
-                    <tr key={idx} style={{ borderBottom: idx < rChannelFunnel.length - 1 ? "1px solid #f1f1f1" : "none" }}>
+                  {sortedChannels.map((ch, idx) => (
+                    <tr key={idx} style={{ borderBottom: idx < sortedChannels.length - 1 ? "1px solid #f1f1f1" : "none" }}>
                       <td style={{ padding: "10px 16px" }}>
                         <span style={{ fontSize: "12px", fontWeight: 600, color: ch.color, background: ch.bg, padding: "2px 8px", borderRadius: "4px" }}>
                           {ch.label}
@@ -1733,6 +1764,8 @@ export default function Index() {
                   ))}
                 </tbody>
               </table>
+                );
+              })()}
             </div>
           )}
 
@@ -1754,14 +1787,15 @@ export default function Index() {
                 <thead>
                   <tr style={{ borderTop: "1px solid #e3e3e3", borderBottom: "1px solid #e3e3e3" }}>
                     <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "left" }}>Campaign</th>
-                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Cart adds</th>
-                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Orders</th>
-                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Revenue</th>
-                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Conv. rate</th>
+                    {(['cartAdds','orders','revenue','convRate'] as const).map(col => {
+                      const labels: Record<string,string> = { cartAdds:'Cart adds', orders:'Orders', revenue:'Revenue', convRate:'Conv. rate' };
+                      const active = campaignSort.col === col;
+                      return <th key={col} onClick={() => setCampaignSort(s => s.col===col ? {col,dir:s.dir==='desc'?'asc':'desc'} : {col,dir:'desc'})} style={{ padding:"8px 16px", fontSize:"12px", fontWeight:600, color:active?"#202223":"#6d7175", textAlign:"right", whiteSpace:"nowrap", cursor:"pointer", userSelect:"none" }}>{labels[col]}{active?(campaignSort.dir==='desc'?' ↓':' ↑'):''}</th>;
+                    })}
                   </tr>
                 </thead>
                 <tbody>
-                  {rTopCampaigns.map((row, idx) => {
+                  {[...rTopCampaigns].sort((a,b) => { const m=campaignSort.dir==='desc'?-1:1; const col=campaignSort.col as keyof typeof a; return m*((a[col] as number)-(b[col] as number)); }).map((row, idx) => {
                     const ch = getTrafficChannel(row.utmSource, row.utmMedium);
                     return (
                       <tr key={idx} style={{ borderBottom: idx < rTopCampaigns.length - 1 ? "1px solid #f1f1f1" : "none" }}>
@@ -1802,14 +1836,15 @@ export default function Index() {
                 <thead>
                   <tr style={{ borderTop: "1px solid #e3e3e3", borderBottom: "1px solid #e3e3e3" }}>
                     <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "left" }}>Location</th>
-                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Sessions</th>
-                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Cart adds</th>
-                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Orders</th>
-                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Conv. rate</th>
+                    {(['sessions','cartAdds','orders','convRate'] as const).map(col => {
+                      const labels: Record<string,string> = { sessions:'Sessions', cartAdds:'Cart adds', orders:'Orders', convRate:'Conv. rate' };
+                      const active = locationSort.col === col;
+                      return <th key={col} onClick={() => setLocationSort(s => s.col===col ? {col,dir:s.dir==='desc'?'asc':'desc'} : {col,dir:'desc'})} style={{ padding:"8px 16px", fontSize:"12px", fontWeight:600, color:active?"#202223":"#6d7175", textAlign:"right", whiteSpace:"nowrap", cursor:"pointer", userSelect:"none" }}>{labels[col]}{active?(locationSort.dir==='desc'?' ↓':' ↑'):''}</th>;
+                    })}
                   </tr>
                 </thead>
                 <tbody>
-                  {rTopLocations.map((row, idx) => (
+                  {[...rTopLocations].sort((a,b) => { const m=locationSort.dir==='desc'?-1:1; const col=locationSort.col as keyof typeof a; return m*((a[col] as number)-(b[col] as number)); }).map((row, idx) => (
                     <tr key={idx} style={{ borderBottom: idx < rTopLocations.length - 1 ? "1px solid #f1f1f1" : "none" }}>
                       <td style={{ padding: "10px 16px", fontSize: "13px", fontWeight: 500, color: "#202223" }}>{row.location}</td>
                       <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{row.sessions}</td>
