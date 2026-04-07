@@ -409,50 +409,78 @@ export default function Index() {
   }, [data.shopId]);
 
   // Map UTM source+medium to a simplified channel label + color
-  const getTrafficChannel = (utmSource: string | null, utmMedium: string | null): { label: string; color: string; bg: string } => {
+  const getTrafficChannel = (utmSource: string | null, utmMedium: string | null, utmId?: string | null): { label: string; color: string; bg: string } => {
     const src = (utmSource || "").toLowerCase();
     const med = (utmMedium || "").toLowerCase();
 
-    if (!src) return { label: "Direct", color: "#6d7175", bg: "#f6f6f7" };
+    if (!src && !utmId) return { label: "Direct", color: "#6d7175", bg: "#f6f6f7" };
 
-    // Paid social
-    if (["meta", "facebook", "instagram", "fb"].some(s => src.includes(s)) || med === "paid_social" || (med === "paid" && ["meta","facebook","instagram","fb"].some(s => src.includes(s))))
+    // fbclid with no UTMs = Meta ad click
+    if (!src && utmId?.startsWith("FB") || (!src && utmId?.length && utmId.length > 20))
       return { label: "Paid Social", color: "#1877f2", bg: "#e7f0fd" };
 
-    // Organic social
-    if (["facebook", "instagram", "twitter", "tiktok", "pinterest", "snapchat", "linkedin", "youtube"].some(s => src.includes(s)) && med !== "cpc" && med !== "paid")
-      return { label: "Organic Social", color: "#8b5cf6", bg: "#f3f0ff" };
+    // Meta/Facebook/Instagram — covers fb, ig, an (Audience Network), messenger, {{site_source_name}} values
+    const isMetaSrc = ["meta", "facebook", "instagram", "fb", "ig", "an", "messenger"].some(s => src === s || src.includes(s));
+    const isPaidMed = ["cpc", "paid", "paid_social", "paidsocial"].includes(med);
+    const isSocialMed = ["paid_social", "paidsocial", "social"].includes(med);
 
-    // TikTok (paid)
-    if (src.includes("tiktok") && (med === "cpc" || med === "paid" || med === "paid_social"))
+    if (isMetaSrc && (isPaidMed || isSocialMed || med === ""))
+      return { label: "Paid Social", color: "#1877f2", bg: "#e7f0fd" };
+
+    // TikTok paid (check before generic social)
+    if (src.includes("tiktok") && (isPaidMed || isSocialMed))
       return { label: "TikTok Ads", color: "#010101", bg: "#f0f0f0" };
 
-    // Google paid
-    if ((src.includes("google") || src.includes("adwords")) && (med === "cpc" || med === "ppc" || med === "paid"))
+    // TikTok organic
+    if (src.includes("tiktok"))
+      return { label: "TikTok", color: "#555", bg: "#f0f0f0" };
+
+    // Google Ads (gclid also signals this but we don't have it — check cpc)
+    if ((src.includes("google") || src.includes("adwords")) && (med === "cpc" || med === "ppc" || isPaidMed))
       return { label: "Google Ads", color: "#34a853", bg: "#e6f4ea" };
 
     // Organic search
-    if (["google", "bing", "yahoo", "duckduckgo", "baidu"].some(s => src.includes(s)) || med === "organic")
+    if (["google", "bing", "yahoo", "duckduckgo", "baidu", "yandex"].some(s => src.includes(s)) || med === "organic")
       return { label: "Organic Search", color: "#ea8600", bg: "#fff4e5" };
 
-    // Email
-    if (src.includes("email") || src.includes("klaviyo") || src.includes("mailchimp") || src.includes("newsletter") || med === "email")
+    // Klaviyo / email platforms
+    if (src.includes("klaviyo") || src.includes("mailchimp") || src.includes("sendgrid") || src.includes("omnisend") || src.includes("drip") || src.includes("email") || src.includes("newsletter") || med === "email")
       return { label: "Email", color: "#7c3aed", bg: "#f5f3ff" };
 
-    // SMS
-    if (src.includes("sms") || med === "sms" || src.includes("attentive") || src.includes("postscript"))
+    // SMS platforms
+    if (src.includes("sms") || med === "sms" || src.includes("attentive") || src.includes("postscript") || src.includes("klaviyo_sms"))
       return { label: "SMS", color: "#059669", bg: "#ecfdf5" };
 
-    // Affiliates / influencers
-    if (med === "affiliate" || med === "influencer" || src.includes("affiliate"))
+    // Pinterest
+    if (src.includes("pinterest") && isPaidMed)
+      return { label: "Pinterest Ads", color: "#e60023", bg: "#fff0f1" };
+    if (src.includes("pinterest"))
+      return { label: "Pinterest", color: "#e60023", bg: "#fff0f1" };
+
+    // Snapchat
+    if (src.includes("snapchat"))
+      return { label: "Snapchat", color: "#fffc00", bg: "#fffee0" };
+
+    // YouTube
+    if (src.includes("youtube") && isPaidMed)
+      return { label: "YouTube Ads", color: "#ff0000", bg: "#fff0f0" };
+    if (src.includes("youtube"))
+      return { label: "YouTube", color: "#ff0000", bg: "#fff0f0" };
+
+    // Organic social (other platforms)
+    if (["twitter", "x.com", "linkedin", "reddit"].some(s => src.includes(s)))
+      return { label: "Organic Social", color: "#8b5cf6", bg: "#f3f0ff" };
+
+    // Affiliate / influencer
+    if (med === "affiliate" || med === "influencer" || src.includes("affiliate") || src.includes("impact") || src.includes("shareasale"))
       return { label: "Affiliate", color: "#b45309", bg: "#fffbeb" };
 
     // Generic paid
-    if (med === "cpc" || med === "paid" || med === "ppc" || med === "paidsocial")
+    if (isPaidMed)
       return { label: "Paid", color: "#0070f3", bg: "#e6f0fd" };
 
-    // Fallback — show source name
-    const display = utmSource!.charAt(0).toUpperCase() + utmSource!.slice(1);
+    // Fallback — show source name capitalized
+    const display = utmSource ? utmSource.charAt(0).toUpperCase() + utmSource.slice(1) : "Unknown";
     return { label: display, color: "#6d7175", bg: "#f6f6f7" };
   };
 
@@ -916,44 +944,48 @@ export default function Index() {
                       </div>
                     </div>
                   )}
-                  {selectedSession.landingPage && (
-                    <div>
-                      <div style={{ fontSize: "12px", color: "#6d7175", marginBottom: "4px" }}>Landing Page</div>
-                      <div style={{ fontSize: "12px", color: "#202223", wordBreak: "break-all", fontFamily: "monospace" }}>
-                        {selectedSession.landingPage}
-                      </div>
-                    </div>
-                  )}
-                  {(selectedSession.utmSource || selectedSession.utmMedium || selectedSession.utmCampaign || selectedSession.utmContent || selectedSession.utmId) && (
+                  {(selectedSession.landingPage || selectedSession.utmSource || selectedSession.utmMedium || selectedSession.utmCampaign) && (
                     <div style={{ gridColumn: "1 / -1" }}>
-                      <div style={{ fontSize: "12px", color: "#6d7175", marginBottom: "6px" }}>Traffic Source</div>
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-                        {selectedSession.utmSource && (
-                          <span style={{ fontSize: "12px", background: "#f1f8ff", border: "1px solid #c8e1ff", color: "#0366d6", padding: "2px 8px", borderRadius: "4px" }}>
-                            source: {selectedSession.utmSource}
-                          </span>
-                        )}
-                        {selectedSession.utmMedium && (
-                          <span style={{ fontSize: "12px", background: "#f1f8ff", border: "1px solid #c8e1ff", color: "#0366d6", padding: "2px 8px", borderRadius: "4px" }}>
-                            medium: {selectedSession.utmMedium}
-                          </span>
-                        )}
-                        {selectedSession.utmCampaign && (
-                          <span style={{ fontSize: "12px", background: "#f1f8ff", border: "1px solid #c8e1ff", color: "#0366d6", padding: "2px 8px", borderRadius: "4px" }}>
-                            campaign: {selectedSession.utmCampaign}
-                          </span>
-                        )}
-                        {selectedSession.utmContent && (
-                          <span style={{ fontSize: "12px", background: "#f1f8ff", border: "1px solid #c8e1ff", color: "#0366d6", padding: "2px 8px", borderRadius: "4px" }}>
-                            content: {selectedSession.utmContent}
-                          </span>
-                        )}
-                        {selectedSession.utmId && (
-                          <span style={{ fontSize: "12px", background: "#f1f8ff", border: "1px solid #c8e1ff", color: "#0366d6", padding: "2px 8px", borderRadius: "4px" }}>
-                            id: {selectedSession.utmId}
-                          </span>
-                        )}
-                      </div>
+                      <div style={{ fontSize: "12px", color: "#6d7175", marginBottom: "8px" }}>Traffic</div>
+                      {/* Channel badge */}
+                      {(selectedSession.utmSource || selectedSession.utmId) && (() => {
+                        const ch = getTrafficChannel(selectedSession.utmSource, selectedSession.utmMedium, selectedSession.utmId);
+                        return (
+                          <div style={{ marginBottom: "10px", display: "flex", flexWrap: "wrap", alignItems: "center", gap: "8px" }}>
+                            <span style={{ fontSize: "12px", fontWeight: 600, color: ch.color, background: ch.bg, padding: "3px 10px", borderRadius: "4px" }}>
+                              {ch.label}
+                            </span>
+                            {selectedSession.utmCampaign && (
+                              <span style={{ fontSize: "12px", color: "#202223", fontWeight: 500 }}>
+                                {selectedSession.utmCampaign}
+                              </span>
+                            )}
+                            {selectedSession.utmContent && (
+                              <span style={{ fontSize: "12px", color: "#6d7175" }}>
+                                · {selectedSession.utmContent}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
+                      {/* Full landing URL with UTMs */}
+                      {selectedSession.landingPage && (
+                        <div style={{
+                          fontSize: "11px",
+                          fontFamily: "monospace",
+                          color: "#6d7175",
+                          background: "#f6f6f7",
+                          border: "1px solid #e3e3e3",
+                          borderRadius: "4px",
+                          padding: "8px 10px",
+                          wordBreak: "break-all",
+                          lineHeight: "1.5",
+                          userSelect: "all",
+                          cursor: "text"
+                        }}>
+                          {selectedSession.landingPage}
+                        </div>
+                      )}
                     </div>
                   )}
                   <div>
@@ -1336,7 +1368,7 @@ export default function Index() {
                         </div>
 
                         {(session.utmSource || session.referrerUrl) && (() => {
-                          const channel = getTrafficChannel(session.utmSource, session.utmMedium);
+                          const channel = getTrafficChannel(session.utmSource, session.utmMedium, session.utmId);
                           return (
                             <div style={{ marginBottom: "10px" }}>
                               <span style={{
