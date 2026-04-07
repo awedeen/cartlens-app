@@ -86,10 +86,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   }
 
   try {
-    // Grab geo data from Cloudflare/proxy headers
+    // Grab geo data — try Cloudflare headers first (if CF is in front), fall back to IP lookup
     const cfCountry = request.headers.get("cf-ipcountry") || request.headers.get("CF-IPCountry");
     const cfCity = request.headers.get("cf-ipcity") || request.headers.get("CF-IPCity");
-    const cfIP = request.headers.get("cf-connecting-ip") || request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+    // Railway uses Fastly, real IP is in x-forwarded-for
+    const cfIP = request.headers.get("cf-connecting-ip") ||
+      request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+      request.headers.get("fly-client-ip") || null;
 
     // Parse event payload
     const payload = await request.json();
@@ -168,10 +171,29 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     const isSuspectedBot = shop.botFilterEnabled ? botDetection.isBot : false;
 
     // Geo: Cloudflare headers first, fall back to billing address from checkout events
-    const city = cfCity || billingCity || null;
-    const country = billingCountry || null;
-    const countryCode = (cfCountry && cfCountry !== "XX") ? cfCountry : (billingCountryCode || null);
-    const resolvedIP = cfIP || ipAddress || null;
+    const resolvedIP = cfIP || (ipAddress && !ipAddress.startsWith('127') && !ipAddress.startsWith('::1') ? ipAddress : null) || null;
+
+    // Geo resolution: CF headers > IP lookup > billing address fallback
+    let city = cfCity || billingCity || null;
+    let country = billingCountry || null;
+    let countryCode = (cfCountry && cfCountry !== "XX") ? cfCountry : (billingCountryCode || null);
+
+    // If no CF geo and we have an IP, try iplocate.io (free, no key, 1k/day)
+    if (!city && !countryCode && resolvedIP && resolvedIP !== "unknown") {
+      try {
+        const geoRes = await fetch(`https://www.iplocate.io/api/lookup/${resolvedIP}`, {
+          signal: AbortSignal.timeout(1500), // 1.5s timeout — don't slow down the response
+        });
+        if (geoRes.ok) {
+          const geo = await geoRes.json();
+          city = geo.city || null;
+          country = geo.country || null;
+          countryCode = geo.country_code || null;
+        }
+      } catch {
+        // Geo lookup failed — non-fatal, continue without
+      }
+    }
 
     // Parse browser, OS, and device model from user agent
     const parsedUA = parseUserAgent(userAgent || null);
