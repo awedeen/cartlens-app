@@ -1285,26 +1285,30 @@ export default function Index() {
                       .slice(0, 4);
 
                     const isFlashing = flashIds.has(session.id);
+                    const isConverted = session.orderPlaced;
+                    const isCheckout = session.checkoutStarted && !session.orderPlaced;
+                    const cardBg = isFlashing ? "#fffbef" : isConverted ? "#f6fdf9" : "#ffffff";
+                    const cardBorder = isConverted ? "1px solid #95c9b4" : isCheckout ? "1px solid #ffd880" : "1px solid #e3e3e3";
+                    const cardBorderLeft = isConverted ? "3px solid #008060" : isCheckout ? "3px solid #ffc453" : "1px solid #e3e3e3";
                     return (
                       <div
                         key={session.id}
                         onClick={() => setSelectedSession(session)}
                         style={{
-                          background: isFlashing ? "#fffbef" : "#ffffff",
-                          border: "1px solid #e3e3e3",
+                          background: cardBg,
+                          border: cardBorder,
+                          borderLeft: cardBorderLeft,
                           borderRadius: "8px",
                           padding: "16px",
                           cursor: "pointer",
                           transition: isFlashing ? "none" : "background-color 0.7s ease, box-shadow 0.2s",
-                          boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
+                          boxShadow: isConverted ? "0 1px 3px rgba(0,128,96,0.12)" : "0 1px 2px rgba(0,0,0,0.05)"
                         }}
                         onMouseEnter={(e) => {
-                          e.currentTarget.style.background = "#f6f6f7";
-                          e.currentTarget.style.boxShadow = "0 2px 4px rgba(0,0,0,0.1)";
+                          e.currentTarget.style.boxShadow = "0 2px 6px rgba(0,0,0,0.1)";
                         }}
                         onMouseLeave={(e) => {
-                          e.currentTarget.style.background = "#ffffff";
-                          e.currentTarget.style.boxShadow = "0 1px 2px rgba(0,0,0,0.05)";
+                          e.currentTarget.style.boxShadow = isConverted ? "0 1px 3px rgba(0,128,96,0.12)" : "0 1px 2px rgba(0,0,0,0.05)";
                         }}
                       >
                         {/* Card Header */}
