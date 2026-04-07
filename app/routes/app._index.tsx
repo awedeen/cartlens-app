@@ -718,6 +718,7 @@ export default function Index() {
   const rAvgCartValue = rCarts > 0
     ? filteredForReports.filter(s => s.cartCreated).reduce((sum, s) => sum + s.cartTotal, 0) / rCarts
     : 0;
+  void rAvgCartValue;
   const rConversionRate = rCarts > 0 ? (rOrders / rCarts) * 100 : 0;
   const rCheckoutRate = rCarts > 0 ? (rCheckouts / rCarts) * 100 : 0;
   const rCheckoutToOrderRate = rCheckouts > 0 ? (rOrders / rCheckouts) * 100 : 0;
@@ -743,19 +744,7 @@ export default function Index() {
     .sort((a, b) => b.cartAdds - a.cartAdds)
     .slice(0, 10);
 
-  // Top referrers for selected range — computed client-side so the toggle affects this too
-  const rReferrerMap: Record<string, { sessions: number; cartAdds: number; conversions: number }> = {};
-  for (const s of filteredForReports) {
-    const referrer = s.referrerUrl || "Direct";
-    if (!rReferrerMap[referrer]) rReferrerMap[referrer] = { sessions: 0, cartAdds: 0, conversions: 0 };
-    rReferrerMap[referrer].sessions += 1;
-    if (s.cartCreated) rReferrerMap[referrer].cartAdds += 1;
-    if (s.orderPlaced) rReferrerMap[referrer].conversions += 1;
-  }
-  const rTopReferrers = Object.entries(rReferrerMap)
-    .map(([referrer, d]) => ({ referrer, sessions: d.sessions, cartAdds: d.cartAdds, conversionRate: d.cartAdds > 0 ? (d.conversions / d.cartAdds) * 100 : 0 }))
-    .sort((a, b) => b.sessions - a.sessions)
-    .slice(0, 10);
+  const rRevenue = filteredForReports.filter(s => s.orderPlaced).reduce((sum, s) => sum + (s.orderValue || 0), 0);
 
   // UTM source/medium breakdown for selected range
   const rUtmMap: Record<string, { utmSource: string | null; utmMedium: string | null; sessions: number; cartAdds: number; orders: number }> = {};
@@ -1478,11 +1467,44 @@ export default function Index() {
       {/* Reports Tab */}
       {activeTab === "reports" && (
         <div style={{ overflow: "hidden" }}>
-          {/* Date Range Toggle */}
+          {/* Date Range Toggle + Export */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-            <span style={{ fontSize: "12px", color: "#9ca3af" }}>
-              Based on {sessions.length} most recent session{sessions.length !== 1 ? "s" : ""}
-            </span>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <button
+                onClick={async () => {
+                  try {
+                    const res = await fetch("/app/api/export");
+                    if (!res.ok) throw new Error("Export failed");
+                    const blob = await res.blob();
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = `cartlens-export-${new Date().toISOString().split("T")[0]}.csv`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                  } catch (e) {
+                    alert("Export failed. Please try again.");
+                  }
+                }}
+                style={{
+                  background: "#ffffff",
+                  color: "#202223",
+                  border: "1px solid #e3e3e3",
+                  borderRadius: "4px",
+                  padding: "6px 12px",
+                  fontSize: "13px",
+                  fontWeight: 500,
+                  cursor: "pointer"
+                }}
+              >
+                Export CSV
+              </button>
+              <span style={{ fontSize: "12px", color: "#9ca3af" }}>
+                Based on {sessions.length} most recent session{sessions.length !== 1 ? "s" : ""}
+              </span>
+            </div>
             <div style={{ display: "flex", border: "1px solid #e3e3e3", borderRadius: "6px", overflow: "hidden" }}>
               {([7, 30, 90] as const).map((r) => (
                 <button
@@ -1505,6 +1527,13 @@ export default function Index() {
             </div>
           </div>
 
+          {filteredForReports.length === 0 && (
+            <div style={{ textAlign: "center", padding: "40px 16px", color: "#6d7175" }}>
+              <div style={{ fontSize: "16px", fontWeight: 600, color: "#202223", marginBottom: "8px" }}>No data for this period</div>
+              <div style={{ fontSize: "14px" }}>Try expanding the date range above</div>
+            </div>
+          )}
+
           {/* Summary Cards */}
           <div style={{
             display: "grid",
@@ -1515,7 +1544,7 @@ export default function Index() {
             {[
               { label: "Total Carts", value: rCarts, color: "#202223" },
               { label: "Conversion Rate", value: `${rConversionRate.toFixed(1)}%`, color: "#008060" },
-              { label: "Avg Cart Value", value: `$${rAvgCartValue.toFixed(2)}`, color: "#202223" },
+              { label: "Revenue", value: rRevenue.toLocaleString('en-US', {style:'currency',currency:'USD',maximumFractionDigits:0}), color: "#202223" },
               { label: "Total Orders", value: rOrders, color: "#008060" }
             ].map((stat, idx) => (
               <div
@@ -1651,55 +1680,7 @@ export default function Index() {
               })()}
           </div>
 
-          {/* Top Referrers */}
-          <div style={{
-            background: "#ffffff",
-            border: "1px solid #e3e3e3",
-            borderRadius: "8px",
-            overflowX: "auto",
-            marginBottom: "20px",
-            boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
-          }}>
-            <div style={{ padding: "16px 16px 12px" }}>
-              <h3 style={{ fontSize: "15px", fontWeight: 600, color: "#202223", margin: 0 }}>
-                Top Referrers
-              </h3>
-            </div>
-            {rTopReferrers.length === 0 ? (
-              <div style={{ fontSize: "14px", color: "#6d7175", padding: "20px 16px", textAlign: "center" }}>
-                No referrer data yet
-              </div>
-            ) : (
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead>
-                  <tr style={{ borderTop: "1px solid #e3e3e3", borderBottom: "1px solid #e3e3e3" }}>
-                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "left" }}>Source</th>
-                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Sessions</th>
-                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Cart adds</th>
-                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Conv. rate</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rTopReferrers.map((referrer, idx) => (
-                    <tr key={idx} style={{ borderBottom: idx < rTopReferrers.length - 1 ? "1px solid #f1f1f1" : "none" }}>
-                      <td style={{ padding: "10px 16px", fontSize: "13px", fontWeight: 500, color: "#202223", maxWidth: "200px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {referrer.referrer}
-                      </td>
-                      <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-                        {referrer.sessions}
-                      </td>
-                      <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-                        {referrer.cartAdds}
-                      </td>
-                      <td style={{ padding: "10px 16px", fontSize: "13px", color: "#008060", textAlign: "right", fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>
-                        {referrer.conversionRate.toFixed(1)}%
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
+
 
           {/* Channel Performance — unified table replacing Traffic Sources + Funnel */}
           {rChannelFunnel.length > 0 && (
