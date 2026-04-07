@@ -276,6 +276,7 @@ export default function Index() {
   const settingsFetcher = useFetcher();
   const [activeTab, setActiveTab] = useState<"live" | "reports" | "settings">("live");
   const [sessions, setSessions] = useState<SessionWithMeta[]>(data.sessions);
+  const [liveRange, setLiveRange] = useState<1 | 7 | 30>(1); // hours for 24h, days for 7d/30d
   const [selectedSession, setSelectedSession] = useState<SessionWithMeta | null>(null);
   const selectedSessionRef = useRef<SessionWithMeta | null>(null);
   useEffect(() => { selectedSessionRef.current = selectedSession; }, [selectedSession]);
@@ -1169,21 +1170,28 @@ export default function Index() {
           ) : (
             /* List View */
             <div>
-              <div style={{ marginBottom: "16px", display: "flex", alignItems: "center", gap: "8px" }}>
-                <h2 style={{ fontSize: "16px", fontWeight: 600, color: "#202223" }}>Recent Cart Activity</h2>
-                <span style={{
-                  background: "#f6f6f7",
-                  color: "#6d7175",
-                  fontSize: "12px",
-                  padding: "2px 8px",
-                  borderRadius: "4px",
-                  fontWeight: 600
-                }}>
-                  {sessions.length}
-                </span>
+              {(() => { const _rangeCutoff = new Date(); if (liveRange === 1) _rangeCutoff.setHours(_rangeCutoff.getHours()-24); else _rangeCutoff.setDate(_rangeCutoff.getDate()-liveRange); return null; })()}
+              {/* Time filter header */}
+              <div style={{ marginBottom: "16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <h2 style={{ fontSize: "16px", fontWeight: 600, color: "#202223" }}>Recent Cart Activity</h2>
+                  <span style={{ background: "#f6f6f7", color: "#6d7175", fontSize: "12px", padding: "2px 8px", borderRadius: "4px", fontWeight: 600 }}>
+                    {sessions.filter(s => { const c = new Date(); if (liveRange===1) c.setHours(c.getHours()-24); else c.setDate(c.getDate()-liveRange); return new Date(s.updatedAt)>=c; }).length}
+                  </span>
+                </div>
+                <div style={{ display: "flex", border: "1px solid #e3e3e3", borderRadius: "6px", overflow: "hidden" }}>
+                  {([{v:1,l:"24h"},{v:7,l:"7d"},{v:30,l:"30d"}] as {v:1|7|30,l:string}[]).map(({v,l}) => (
+                    <button key={v} onClick={() => setLiveRange(v)} style={{
+                      padding: "5px 12px", fontSize: "12px", fontWeight: liveRange===v ? 600 : 400,
+                      color: liveRange===v ? "#ffffff" : "#6d7175",
+                      background: liveRange===v ? "#008060" : "#ffffff",
+                      border: "none", borderRight: v!==30 ? "1px solid #e3e3e3" : "none", cursor: "pointer"
+                    }}>{l}</button>
+                  ))}
+                </div>
               </div>
 
-              {sessions.length === 0 ? (
+              {sessions.filter(s => { const c = new Date(); if (liveRange===1) c.setHours(c.getHours()-24); else c.setDate(c.getDate()-liveRange); return new Date(s.updatedAt)>=c; }).length === 0 ? (
                 <div style={{
                   background: "#ffffff",
                   border: "1px solid #e3e3e3",
@@ -1271,7 +1279,7 @@ export default function Index() {
                 </div>
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                  {sessions.slice(0, 50).map((session) => {
+                  {sessions.filter(s => { const c = new Date(); if (liveRange===1) c.setHours(c.getHours()-24); else c.setDate(c.getDate()-liveRange); return new Date(s.updatedAt)>=c; }).slice(0, 50).map((session) => {
                     const status = getStatusBadge(session);
                     const products = session.events
                       ?.filter((e) => e.eventType === "cart_add")
