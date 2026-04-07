@@ -769,6 +769,36 @@ export default function Index() {
     .slice(0, 10);
   const hasUtmData = filteredForReports.some(s => s.utmSource);
 
+  // Top campaigns breakdown (by utm_campaign)
+  const rCampaignMap: Record<string, { utmSource: string | null; utmMedium: string | null; sessions: number; cartAdds: number; orders: number; revenue: number }> = {};
+  for (const s of filteredForReports) {
+    if (!s.utmCampaign) continue;
+    const key = s.utmCampaign;
+    if (!rCampaignMap[key]) rCampaignMap[key] = { utmSource: s.utmSource, utmMedium: s.utmMedium, sessions: 0, cartAdds: 0, orders: 0, revenue: 0 };
+    rCampaignMap[key].sessions += 1;
+    if (s.cartCreated) rCampaignMap[key].cartAdds += 1;
+    if (s.orderPlaced) { rCampaignMap[key].orders += 1; rCampaignMap[key].revenue += s.orderValue || 0; }
+  }
+  const rTopCampaigns = Object.entries(rCampaignMap)
+    .map(([campaign, d]) => ({ campaign, utmSource: d.utmSource, utmMedium: d.utmMedium, sessions: d.sessions, cartAdds: d.cartAdds, orders: d.orders, revenue: d.revenue, convRate: d.cartAdds > 0 ? (d.orders / d.cartAdds) * 100 : 0 }))
+    .sort((a, b) => b.cartAdds - a.cartAdds)
+    .slice(0, 10);
+  const hasCampaignData = rTopCampaigns.length > 0;
+
+  // Per-channel attribution funnel
+  const rChannelMap: Record<string, { label: string; color: string; bg: string; carts: number; checkouts: number; orders: number }> = {};
+  for (const s of filteredForReports) {
+    const ch = getTrafficChannel(s.utmSource, s.utmMedium, s.utmId);
+    if (!rChannelMap[ch.label]) rChannelMap[ch.label] = { label: ch.label, color: ch.color, bg: ch.bg, carts: 0, checkouts: 0, orders: 0 };
+    if (s.cartCreated) rChannelMap[ch.label].carts += 1;
+    if (s.checkoutStarted) rChannelMap[ch.label].checkouts += 1;
+    if (s.orderPlaced) rChannelMap[ch.label].orders += 1;
+  }
+  const rChannelFunnel = Object.values(rChannelMap)
+    .filter(c => c.carts > 0)
+    .sort((a, b) => b.carts - a.carts)
+    .slice(0, 8);
+
   return (
     // @ts-ignore -- App Bridge s-page type definition omits `title` but it works at runtime
     <s-page title="CartLens">
@@ -1683,6 +1713,108 @@ export default function Index() {
               </table>
             </div>
           )}
+
+          {/* Per-Channel Attribution Funnel */}
+          {rChannelFunnel.length > 0 && (
+            <div style={{
+              background: "#ffffff",
+              border: "1px solid #e3e3e3",
+              borderRadius: "8px",
+              padding: "16px",
+              marginBottom: "20px",
+              boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
+            }}>
+              <h3 style={{ fontSize: "15px", fontWeight: 600, color: "#202223", marginBottom: "4px" }}>Channel Performance</h3>
+              <p style={{ fontSize: "12px", color: "#919eab", marginBottom: "16px", margin: "0 0 16px" }}>Cart adds → Checkouts → Orders by traffic source</p>
+              <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+                {rChannelFunnel.map((ch, idx) => (
+                  <div key={idx}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                      <span style={{ fontSize: "12px", fontWeight: 600, color: ch.color, background: ch.bg, padding: "2px 8px", borderRadius: "4px" }}>
+                        {ch.label}
+                      </span>
+                      <div style={{ display: "flex", gap: "16px", fontSize: "12px", color: "#6d7175" }}>
+                        <span>{ch.carts} carts</span>
+                        <span>{ch.checkouts} checkouts</span>
+                        <span style={{ color: "#008060", fontWeight: 600 }}>{ch.orders} orders</span>
+                        <span style={{ color: ch.carts > 0 ? "#008060" : "#6d7175", fontWeight: 500 }}>
+                          {ch.carts > 0 ? `${((ch.orders / ch.carts) * 100).toFixed(1)}%` : "—"}
+                        </span>
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: "2px", height: "6px" }}>
+                      <div style={{ width: "100%", background: `${ch.bg}`, border: `1px solid ${ch.color}20`, borderRadius: "3px", overflow: "hidden", display: "flex" }}>
+                        <div style={{ width: `${ch.carts > 0 ? 100 : 0}%`, background: `${ch.color}30`, height: "100%" }} />
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: "2px", height: "4px", marginTop: "2px" }}>
+                      <div style={{ width: `${ch.carts > 0 ? (ch.checkouts / ch.carts) * 100 : 0}%`, background: ch.color, borderRadius: "2px", opacity: 0.6, transition: "width 0.3s" }} />
+                      <div style={{ flex: 1, background: "#f1f1f1", borderRadius: "2px" }} />
+                    </div>
+                    <div style={{ display: "flex", gap: "2px", height: "4px", marginTop: "2px" }}>
+                      <div style={{ width: `${ch.carts > 0 ? (ch.orders / ch.carts) * 100 : 0}%`, background: ch.color, borderRadius: "2px", transition: "width 0.3s" }} />
+                      <div style={{ flex: 1, background: "#f1f1f1", borderRadius: "2px" }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Top Campaigns */}
+          {hasCampaignData && (
+            <div style={{
+              background: "#ffffff",
+              border: "1px solid #e3e3e3",
+              borderRadius: "8px",
+              overflowX: "auto",
+              marginBottom: "20px",
+              boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
+            }}>
+              <div style={{ padding: "16px 16px 12px", display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                <h3 style={{ fontSize: "15px", fontWeight: 600, color: "#202223", margin: 0 }}>Top Campaigns</h3>
+                <span style={{ fontSize: "12px", color: "#919eab" }}>by utm_campaign</span>
+              </div>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ borderTop: "1px solid #e3e3e3", borderBottom: "1px solid #e3e3e3" }}>
+                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "left" }}>Campaign</th>
+                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Cart adds</th>
+                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Orders</th>
+                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Revenue</th>
+                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Conv. rate</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rTopCampaigns.map((row, idx) => {
+                    const ch = getTrafficChannel(row.utmSource, row.utmMedium);
+                    return (
+                      <tr key={idx} style={{ borderBottom: idx < rTopCampaigns.length - 1 ? "1px solid #f1f1f1" : "none" }}>
+                        <td style={{ padding: "10px 16px" }}>
+                          <div style={{ fontSize: "13px", fontWeight: 500, color: "#202223", marginBottom: "2px" }}>{row.campaign}</div>
+                          <span style={{ fontSize: "11px", fontWeight: 600, color: ch.color, background: ch.bg, padding: "1px 6px", borderRadius: "3px" }}>{ch.label}</span>
+                        </td>
+                        <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{row.cartAdds}</td>
+                        <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{row.orders}</td>
+                        <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                          {row.revenue > 0 ? `$${row.revenue.toFixed(2)}` : "—"}
+                        </td>
+                        <td style={{ padding: "10px 16px", fontSize: "13px", color: "#008060", textAlign: "right", fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>
+                          {row.convRate.toFixed(1)}%
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Data scope disclaimer */}
+          <div style={{ fontSize: "12px", color: "#919eab", textAlign: "center", paddingBottom: "8px" }}>
+            📊 Tracking begins when a visitor adds to cart. Visitors who browse without adding to cart are not included in this data.
+          </div>
+
         </div>
       )}
 
