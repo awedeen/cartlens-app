@@ -76,6 +76,7 @@ model CartSession {
   deviceType    String?  // mobile, desktop, tablet
   browser       String?
   os            String?
+  deviceModel   String?  // iPhone, iPad, Android model if detectable
   userAgent     String?
 
   // Funnel status

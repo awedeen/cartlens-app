@@ -1,7 +1,7 @@
 # CartLens Dev - staging/testing app (NOT for App Store)
 # Points to: cartlens-app-staging.up.railway.app (dev branch)
 
-name = "CartLens"
+name = "CartLens Dev"
 client_id = "f41cc538e5ad6f4bb176624b6e6465a5"
 application_url = "https://cartlens-app-staging.up.railway.app"
 embedded = true

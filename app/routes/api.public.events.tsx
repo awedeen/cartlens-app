@@ -26,8 +26,8 @@ import { detectBot } from "../services/bot.server";
 import sseManager from "../services/sse.server";
 import { checkRateLimit, sanitizeString } from "../utils/security.server";
 
-function parseUserAgent(ua: string | null): { browser: string | null; os: string | null } {
-  if (!ua) return { browser: null, os: null };
+function parseUserAgent(ua: string | null): { browser: string | null; os: string | null; deviceModel: string | null } {
+  if (!ua) return { browser: null, os: null, deviceModel: null };
 
   let browser: string | null = null;
   if (/Edg\//i.test(ua)) browser = "Edge";
@@ -45,7 +45,27 @@ function parseUserAgent(ua: string | null): { browser: string | null; os: string
   else if (/Linux/i.test(ua)) os = "Linux";
   else if (/CrOS/i.test(ua)) os = "Chrome OS";
 
-  return { browser, os };
+  // Device model detection
+  let deviceModel: string | null = null;
+  if (/iPhone/i.test(ua)) {
+    deviceModel = "iPhone";
+  } else if (/iPad/i.test(ua)) {
+    deviceModel = "iPad";
+  } else if (/Android/i.test(ua)) {
+    // Try to extract Android device model from UA string
+    // Pattern: Android <version>; <Model>) or ; <Model> Build/
+    const buildMatch = ua.match(/;\s*([^;)]+?)\s+Build\//i);
+    const androidMatch = ua.match(/Android[^;]*;\s*([^;)]+)/i);
+    const model = buildMatch?.[1] || androidMatch?.[1];
+    if (model) {
+      deviceModel = model.trim();
+    } else {
+      deviceModel = "Android";
+    }
+  }
+  // null for desktop (Windows, macOS, Linux, Chrome OS)
+
+  return { browser, os, deviceModel };
 }
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -153,10 +173,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     const countryCode = (cfCountry && cfCountry !== "XX") ? cfCountry : (billingCountryCode || null);
     const resolvedIP = cfIP || ipAddress || null;
 
-    // Parse browser and OS from user agent
+    // Parse browser, OS, and device model from user agent
     const parsedUA = parseUserAgent(userAgent || null);
     const resolvedBrowser = browser || parsedUA.browser;
     const resolvedOS = os || parsedUA.os;
+    const resolvedDeviceModel = parsedUA.deviceModel;
 
     // Find or create CartSession — upsert is race-condition-safe
     // On conflict (same shopId+visitorId), only update mutable identity fields.
@@ -183,6 +204,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         deviceType,
         browser: resolvedBrowser,
         os: resolvedOS,
+        deviceModel: resolvedDeviceModel,
         userAgent,
         isSuspectedBot,
         botReason: isSuspectedBot ? botDetection.reason : null,

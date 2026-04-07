@@ -669,6 +669,23 @@ export default function Index() {
     .sort((a, b) => b.sessions - a.sessions)
     .slice(0, 10);
 
+  // UTM source/medium breakdown for selected range
+  const rUtmMap: Record<string, { sessions: number; cartAdds: number; orders: number }> = {};
+  for (const s of filteredForReports) {
+    const key = s.utmSource
+      ? (s.utmMedium ? `${s.utmSource} / ${s.utmMedium}` : s.utmSource)
+      : "Direct";
+    if (!rUtmMap[key]) rUtmMap[key] = { sessions: 0, cartAdds: 0, orders: 0 };
+    rUtmMap[key].sessions += 1;
+    if (s.cartCreated) rUtmMap[key].cartAdds += 1;
+    if (s.orderPlaced) rUtmMap[key].orders += 1;
+  }
+  const rUtmBreakdown = Object.entries(rUtmMap)
+    .map(([source, d]) => ({ source, sessions: d.sessions, cartAdds: d.cartAdds, orders: d.orders, convRate: d.cartAdds > 0 ? (d.orders / d.cartAdds) * 100 : 0 }))
+    .sort((a, b) => b.sessions - a.sessions)
+    .slice(0, 10);
+  const hasUtmData = filteredForReports.some(s => s.utmSource);
+
   return (
     // @ts-ignore -- App Bridge s-page type definition omits `title` but it works at runtime
     <s-page title="CartLens">
@@ -832,7 +849,7 @@ export default function Index() {
                   <div>
                     <div style={{ fontSize: "12px", color: "#6d7175", marginBottom: "4px" }}>Device</div>
                     <div style={{ fontSize: "14px", color: "#202223" }}>
-                      {selectedSession.deviceType || "Unknown"} • {selectedSession.browser || "Unknown"}
+                      {selectedSession.deviceType || "Unknown"} • {selectedSession.browser || "Unknown"}{(selectedSession as any).deviceModel ? ` • ${(selectedSession as any).deviceModel}` : ""}
                     </div>
                   </div>
                   {selectedSession.customerEmail && (
@@ -1286,6 +1303,9 @@ export default function Index() {
                         )}
 
                         <CollapsibleProducts session={session} />
+                        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "8px" }}>
+                          <span style={{ fontSize: "12px", color: "#008060", fontWeight: 500 }}>View details →</span>
+                        </div>
                       </div>
                     );
                   })}
@@ -1515,6 +1535,54 @@ export default function Index() {
               </table>
             )}
           </div>
+
+          {/* Traffic Sources (UTM Breakdown) */}
+          {hasUtmData && (
+            <div style={{
+              background: "#ffffff",
+              border: "1px solid #e3e3e3",
+              borderRadius: "8px",
+              overflowX: "auto",
+              marginBottom: "20px",
+              boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
+            }}>
+              <div style={{ padding: "16px 16px 12px" }}>
+                <h3 style={{ fontSize: "15px", fontWeight: 600, color: "#202223", margin: 0 }}>Traffic Sources</h3>
+              </div>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ borderTop: "1px solid #e3e3e3", borderBottom: "1px solid #e3e3e3" }}>
+                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "left" }}>Source</th>
+                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Sessions</th>
+                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Cart adds</th>
+                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Orders</th>
+                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Conv. rate</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rUtmBreakdown.map((row, idx) => (
+                    <tr key={idx} style={{ borderBottom: idx < rUtmBreakdown.length - 1 ? "1px solid #f1f1f1" : "none" }}>
+                      <td style={{ padding: "10px 16px", fontSize: "13px", fontWeight: 500, color: "#202223", maxWidth: "200px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {row.source}
+                      </td>
+                      <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                        {row.sessions}
+                      </td>
+                      <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                        {row.cartAdds}
+                      </td>
+                      <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                        {row.orders}
+                      </td>
+                      <td style={{ padding: "10px 16px", fontSize: "13px", color: "#008060", textAlign: "right", fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>
+                        {row.convRate.toFixed(1)}%
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
