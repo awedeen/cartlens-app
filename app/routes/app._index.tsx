@@ -1473,7 +1473,9 @@ export default function Index() {
               <button
                 onClick={async () => {
                   try {
-                    const res = await fetch("/app/api/export");
+                    const startDate = new Date();
+                    startDate.setDate(startDate.getDate() - reportRange);
+                    const res = await fetch(`/app/api/export?startDate=${startDate.toISOString()}`);
                     if (!res.ok) throw new Error("Export failed");
                     const blob = await res.blob();
                     const url = URL.createObjectURL(blob);
