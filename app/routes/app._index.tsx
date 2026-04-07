@@ -344,6 +344,8 @@ export default function Index() {
   const [campaignSort, setCampaignSort] = useState<{ col: string; dir: 'desc' | 'asc' }>({ col: 'cartAdds', dir: 'desc' });
   const [productSort, setProductSort] = useState<{ col: string; dir: 'desc' | 'asc' }>({ col: 'cartAdds', dir: 'desc' });
   const [locationSort, setLocationSort] = useState<{ col: string; dir: 'desc' | 'asc' }>({ col: 'sessions', dir: 'desc' });
+  const [abandonedSort, setAbandonedSort] = useState<{ col: string; dir: 'desc' | 'asc' }>({ col: 'abandonedCount', dir: 'desc' });
+  const [expandedProducts, setExpandedProducts] = useState<Set<string>>(new Set());
 
   // Connect to SSE for real-time updates
   useEffect(() => {
@@ -724,6 +726,7 @@ export default function Index() {
   const rCheckoutToOrderRate = rCheckouts > 0 ? (rOrders / rCheckouts) * 100 : 0;
   // Top products for selected range
   const rProductMap: Record<string, { title: string; cartAdds: number; checkouts: number; conversions: number }> = {};
+  const rVariantMap: Record<string, Record<string, { variantTitle: string | null; cartAdds: number; checkouts: number; conversions: number }>> = {};
   for (const s of filteredForReports) {
     const evts = s.events || [];
     for (const e of evts.filter((e: any) => e.eventType === "cart_add")) {
@@ -731,6 +734,12 @@ export default function Index() {
       if (!rProductMap[key]) rProductMap[key] = { title: e.productTitle || "Unknown", cartAdds: 0, checkouts: 0, conversions: 0 };
       rProductMap[key].cartAdds += 1;
       if (s.orderPlaced) rProductMap[key].conversions += 1;
+      // variant tracking
+      const variantKey = e.variantId || "default";
+      if (!rVariantMap[key]) rVariantMap[key] = {};
+      if (!rVariantMap[key][variantKey]) rVariantMap[key][variantKey] = { variantTitle: e.variantTitle || null, cartAdds: 0, checkouts: 0, conversions: 0 };
+      rVariantMap[key][variantKey].cartAdds += 1;
+      if (s.orderPlaced) rVariantMap[key][variantKey].conversions += 1;
     }
     const ciProductIds = new Set(evts.filter((e: any) => e.eventType === "checkout_item").map((e: any) => e.productId).filter(Boolean));
     for (const pid of ciProductIds) {
@@ -743,6 +752,24 @@ export default function Index() {
     .map(([productId, d]) => ({ productId, productTitle: d.title, cartAdds: d.cartAdds, checkouts: d.checkouts, conversions: d.conversions, conversionRate: d.cartAdds > 0 ? (d.conversions / d.cartAdds) * 100 : 0 }))
     .sort((a, b) => b.cartAdds - a.cartAdds)
     .slice(0, 10);
+
+  // Top abandoned products (sessions that didn't convert)
+  const rAbandonedMap: Record<string, { title: string; cartAdds: number; abandonedCount: number }> = {};
+  for (const s of filteredForReports) {
+    if (s.orderPlaced) continue; // only sessions that didn't convert
+    const evts = s.events || [];
+    for (const e of evts.filter((e: any) => e.eventType === "cart_add")) {
+      const key = e.productId || "unknown";
+      if (!rAbandonedMap[key]) rAbandonedMap[key] = { title: e.productTitle || "Unknown", cartAdds: 0, abandonedCount: 0 };
+      rAbandonedMap[key].cartAdds += 1;
+      rAbandonedMap[key].abandonedCount += 1;
+    }
+  }
+  const rTopAbandoned = Object.entries(rAbandonedMap)
+    .map(([productId, d]) => ({ productId, productTitle: d.title, cartAdds: d.cartAdds, abandonedCount: d.abandonedCount }))
+    .sort((a, b) => b.abandonedCount - a.abandonedCount)
+    .slice(0, 10);
+  const hasAbandonedData = rTopAbandoned.length > 0;
 
   const rRevenue = filteredForReports.filter(s => s.orderPlaced).reduce((sum, s) => sum + (s.orderValue || 0), 0);
 
@@ -1616,15 +1643,35 @@ export default function Index() {
                       </tr>
                     </thead>
                     <tbody>
-                      {sortedProducts.map((product, idx) => (
-                        <tr key={product.productId} style={{ borderBottom: idx < sortedProducts.length - 1 ? "1px solid #f1f1f1" : "none" }}>
-                          <td style={{ padding: "10px 16px", fontSize: "13px", fontWeight: 500, color: "#202223", maxWidth: "200px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{product.productTitle}</td>
-                          <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{product.cartAdds}</td>
-                          <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{product.checkouts}</td>
-                          <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{product.conversions}</td>
-                          <td style={{ padding: "10px 16px", fontSize: "13px", color: "#008060", textAlign: "right", fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>{product.conversionRate.toFixed(1)}%</td>
-                        </tr>
-                      ))}
+                      {sortedProducts.map((product, idx) => {
+                        const isExpanded = expandedProducts.has(product.productId);
+                        const variants = rVariantMap[product.productId] ? Object.entries(rVariantMap[product.productId]).map(([vid, v]) => ({ variantId: vid, variantTitle: v.variantTitle, cartAdds: v.cartAdds, conversions: v.conversions, conversionRate: v.cartAdds > 0 ? (v.conversions / v.cartAdds) * 100 : 0 })).sort((a, b) => b.cartAdds - a.cartAdds) : [];
+                        const hasVariants = variants.length > 1 || (variants.length === 1 && variants[0].variantTitle !== null);
+                        return (
+                          <>
+                            <tr key={product.productId} style={{ borderBottom: isExpanded ? "none" : (idx < sortedProducts.length - 1 ? "1px solid #f1f1f1" : "none") }}>
+                              <td style={{ padding: "10px 16px", fontSize: "13px", fontWeight: 500, color: "#202223", maxWidth: "220px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                {hasVariants && (
+                                  <button onClick={() => setExpandedProducts(prev => { const next = new Set(prev); if (next.has(product.productId)) { next.delete(product.productId); } else { next.add(product.productId); } return next; })} style={{ background: "none", border: "1px solid #c4cdd5", borderRadius: "3px", cursor: "pointer", fontSize: "11px", fontWeight: 700, color: "#6d7175", width: "18px", height: "18px", lineHeight: 1, padding: 0, marginRight: "8px", verticalAlign: "middle" }}>{isExpanded ? "−" : "+"}</button>
+                                )}
+                                {product.productTitle}
+                              </td>
+                              <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{product.cartAdds}</td>
+                              <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{product.checkouts}</td>
+                              <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{product.conversions}</td>
+                              <td style={{ padding: "10px 16px", fontSize: "13px", color: "#008060", textAlign: "right", fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>{product.conversionRate.toFixed(1)}%</td>
+                            </tr>
+                            {isExpanded && variants.map((v, vi) => (
+                              <tr key={v.variantId} style={{ background: "#f9fafb", borderBottom: vi < variants.length - 1 ? "1px solid #f1f1f1" : (idx < sortedProducts.length - 1 ? "1px solid #e3e3e3" : "none") }}>
+                                <td style={{ padding: "8px 16px 8px 42px", fontSize: "12px", color: "#6d7175", maxWidth: "220px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v.variantTitle || "Default"}</td>
+                                <td style={{ padding: "8px 16px", fontSize: "12px", color: "#6d7175", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{v.cartAdds}</td>
+                                <td colSpan={2} style={{ padding: "8px 16px", fontSize: "12px", color: "#6d7175", textAlign: "right" }}></td>
+                                <td style={{ padding: "8px 16px", fontSize: "12px", color: "#6d7175", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{v.conversionRate.toFixed(1)}%</td>
+                              </tr>
+                            ))}
+                          </>
+                        );
+                      })}
                     </tbody>
                   </table>
                 );
@@ -1632,6 +1679,58 @@ export default function Index() {
           </div>
 
 
+
+          {/* Top Abandoned Products */}
+          {hasAbandonedData && (
+            <div style={{
+              background: "#ffffff",
+              border: "1px solid #e3e3e3",
+              borderRadius: "8px",
+              overflowX: "auto",
+              marginBottom: "20px",
+              boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
+            }}>
+              <div style={{ padding: "16px 16px 12px" }}>
+                <h3 style={{ fontSize: "15px", fontWeight: 600, color: "#202223", margin: 0 }}>Top Abandoned Products</h3>
+              </div>
+              {(() => {
+                const sortedAbandoned = [...rTopAbandoned].sort((a, b) => {
+                  const mult = abandonedSort.dir === 'desc' ? -1 : 1;
+                  const col = abandonedSort.col as keyof typeof a;
+                  return mult * ((a[col] as number) - (b[col] as number));
+                });
+                const mkAbTh = (label: string, col: string) => {
+                  const active = abandonedSort.col === col;
+                  return (
+                    <th key={col} onClick={() => setAbandonedSort(s => s.col === col ? { col, dir: s.dir === 'desc' ? 'asc' : 'desc' } : { col, dir: 'desc' })}
+                      style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: active ? "#202223" : "#6d7175", textAlign: "right", whiteSpace: "nowrap", cursor: "pointer", userSelect: "none" }}>
+                      {label}{active ? (abandonedSort.dir === 'desc' ? ' ↓' : ' ↑') : ''}
+                    </th>
+                  );
+                };
+                return (
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr style={{ borderTop: "1px solid #e3e3e3", borderBottom: "1px solid #e3e3e3" }}>
+                        <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "left" }}>Product</th>
+                        {mkAbTh("Cart adds", "cartAdds")}
+                        {mkAbTh("Abandoned", "abandonedCount")}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sortedAbandoned.map((product, idx) => (
+                        <tr key={product.productId} style={{ borderBottom: idx < sortedAbandoned.length - 1 ? "1px solid #f1f1f1" : "none" }}>
+                          <td style={{ padding: "10px 16px", fontSize: "13px", fontWeight: 500, color: "#202223", maxWidth: "200px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{product.productTitle}</td>
+                          <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{product.cartAdds}</td>
+                          <td style={{ padding: "10px 16px", fontSize: "13px", color: "#c9242f", textAlign: "right", fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>{product.abandonedCount}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                );
+              })()}
+            </div>
+          )}
 
           {/* Channel Performance — unified table replacing Traffic Sources + Funnel */}
           {rChannelFunnel.length > 0 && (
