@@ -1691,8 +1691,8 @@ export default function Index() {
             )}
           </div>
 
-          {/* Traffic Sources (UTM Breakdown) */}
-          {hasUtmData && (
+          {/* Channel Performance — unified table replacing Traffic Sources + Funnel */}
+          {rChannelFunnel.length > 0 && (
             <div style={{
               background: "#ffffff",
               border: "1px solid #e3e3e3",
@@ -1701,96 +1701,38 @@ export default function Index() {
               marginBottom: "20px",
               boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
             }}>
-              <div style={{ padding: "16px 16px 12px" }}>
-                <h3 style={{ fontSize: "15px", fontWeight: 600, color: "#202223", margin: 0 }}>Traffic Sources</h3>
+              <div style={{ padding: "16px 16px 12px", display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                <h3 style={{ fontSize: "15px", fontWeight: 600, color: "#202223", margin: 0 }}>Channel Performance</h3>
+                <span style={{ fontSize: "12px", color: "#919eab" }}>by traffic source</span>
               </div>
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
                   <tr style={{ borderTop: "1px solid #e3e3e3", borderBottom: "1px solid #e3e3e3" }}>
-                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "left" }}>Source</th>
-                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Sessions</th>
-                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Cart adds</th>
+                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "left" }}>Channel</th>
+                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Carts</th>
+                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Checkouts</th>
                     <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Orders</th>
                     <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Conv. rate</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {rUtmBreakdown.map((row, idx) => {
-                    const ch = getTrafficChannel(row.utmSource, row.utmMedium);
-                    return (
-                    <tr key={idx} style={{ borderBottom: idx < rUtmBreakdown.length - 1 ? "1px solid #f1f1f1" : "none" }}>
+                  {rChannelFunnel.map((ch, idx) => (
+                    <tr key={idx} style={{ borderBottom: idx < rChannelFunnel.length - 1 ? "1px solid #f1f1f1" : "none" }}>
                       <td style={{ padding: "10px 16px" }}>
                         <span style={{ fontSize: "12px", fontWeight: 600, color: ch.color, background: ch.bg, padding: "2px 8px", borderRadius: "4px" }}>
                           {ch.label}
                         </span>
-                        {row.utmMedium && (
-                          <span style={{ fontSize: "11px", color: "#919eab", marginLeft: "6px" }}>{row.utmMedium}</span>
-                        )}
                       </td>
-                      <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-                        {row.sessions}
-                      </td>
-                      <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-                        {row.cartAdds}
-                      </td>
-                      <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-                        {row.orders}
-                      </td>
-                      <td style={{ padding: "10px 16px", fontSize: "13px", color: "#008060", textAlign: "right", fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>
-                        {row.convRate.toFixed(1)}%
+                      <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{ch.carts}</td>
+                      <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{ch.checkouts}</td>
+                      <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: ch.orders > 0 ? 600 : 400 }}>{ch.orders}</td>
+                      <td style={{ padding: "10px 16px", fontSize: "13px", color: ch.carts > 0 && ch.orders > 0 ? "#008060" : "#919eab", textAlign: "right", fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>
+                        {ch.carts > 0 ? `${((ch.orders / ch.carts) * 100).toFixed(1)}%` : "—"}
                       </td>
                     </tr>
-                    );
-                  })}
+                  ))}
                 </tbody>
               </table>
-            </div>
-          )}
-
-          {/* Per-Channel Attribution Funnel */}
-          {rChannelFunnel.length > 0 && (
-            <div style={{
-              background: "#ffffff",
-              border: "1px solid #e3e3e3",
-              borderRadius: "8px",
-              padding: "16px",
-              marginBottom: "20px",
-              boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
-            }}>
-              <h3 style={{ fontSize: "15px", fontWeight: 600, color: "#202223", marginBottom: "4px" }}>Channel Performance</h3>
-              <p style={{ fontSize: "12px", color: "#919eab", marginBottom: "16px", margin: "0 0 16px" }}>Cart adds → Checkouts → Orders by traffic source</p>
-              <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-                {rChannelFunnel.map((ch, idx) => (
-                  <div key={idx}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
-                      <span style={{ fontSize: "12px", fontWeight: 600, color: ch.color, background: ch.bg, padding: "2px 8px", borderRadius: "4px" }}>
-                        {ch.label}
-                      </span>
-                      <div style={{ display: "flex", gap: "16px", fontSize: "12px", color: "#6d7175" }}>
-                        <span>{ch.carts} carts</span>
-                        <span>{ch.checkouts} checkouts</span>
-                        <span style={{ color: "#008060", fontWeight: 600 }}>{ch.orders} orders</span>
-                        <span style={{ color: ch.carts > 0 ? "#008060" : "#6d7175", fontWeight: 500 }}>
-                          {ch.carts > 0 ? `${((ch.orders / ch.carts) * 100).toFixed(1)}%` : "—"}
-                        </span>
-                      </div>
-                    </div>
-                    <div style={{ display: "flex", gap: "2px", height: "6px" }}>
-                      <div style={{ width: "100%", background: `${ch.bg}`, border: `1px solid ${ch.color}20`, borderRadius: "3px", overflow: "hidden", display: "flex" }}>
-                        <div style={{ width: `${ch.carts > 0 ? 100 : 0}%`, background: `${ch.color}30`, height: "100%" }} />
-                      </div>
-                    </div>
-                    <div style={{ display: "flex", gap: "2px", height: "4px", marginTop: "2px" }}>
-                      <div style={{ width: `${ch.carts > 0 ? (ch.checkouts / ch.carts) * 100 : 0}%`, background: ch.color, borderRadius: "2px", opacity: 0.6, transition: "width 0.3s" }} />
-                      <div style={{ flex: 1, background: "#f1f1f1", borderRadius: "2px" }} />
-                    </div>
-                    <div style={{ display: "flex", gap: "2px", height: "4px", marginTop: "2px" }}>
-                      <div style={{ width: `${ch.carts > 0 ? (ch.orders / ch.carts) * 100 : 0}%`, background: ch.color, borderRadius: "2px", transition: "width 0.3s" }} />
-                      <div style={{ flex: 1, background: "#f1f1f1", borderRadius: "2px" }} />
-                    </div>
-                  </div>
-                ))}
-              </div>
             </div>
           )}
 
