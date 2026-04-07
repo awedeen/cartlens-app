@@ -800,6 +800,21 @@ export default function Index() {
     .sort((a, b) => b.carts - a.carts)
     .slice(0, 8);
 
+  // Top locations breakdown for selected range
+  const rGeoMap: Record<string, { sessions: number; cartAdds: number; orders: number }> = {};
+  for (const s of filteredForReports) {
+    const loc = s.city && s.countryCode ? `${s.city}, ${s.countryCode}` : s.countryCode || "Unknown";
+    if (!rGeoMap[loc]) rGeoMap[loc] = { sessions: 0, cartAdds: 0, orders: 0 };
+    rGeoMap[loc].sessions += 1;
+    if (s.cartCreated) rGeoMap[loc].cartAdds += 1;
+    if (s.orderPlaced) rGeoMap[loc].orders += 1;
+  }
+  const rTopLocations = Object.entries(rGeoMap)
+    .map(([location, d]) => ({ location, sessions: d.sessions, cartAdds: d.cartAdds, orders: d.orders, convRate: d.cartAdds > 0 ? (d.orders / d.cartAdds) * 100 : 0 }))
+    .sort((a, b) => b.sessions - a.sessions)
+    .slice(0, 10);
+  const hasGeoData = rTopLocations.some(l => l.location !== "Unknown");
+
   return (
     // @ts-ignore -- App Bridge s-page type definition omits `title` but it works at runtime
     <s-page title="CartLens">
@@ -1412,8 +1427,14 @@ export default function Index() {
                             } catch { return null; }
                           })()}
                         </div>
-                        <div style={{ fontSize: "12px", color: "#919eab", marginBottom: session.utmSource || session.referrerUrl ? "6px" : "10px" }}>
-                          Created {new Date(session.createdAt.toString()).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: displayTimezone })}
+                        <div style={{ fontSize: "12px", color: "#919eab", marginBottom: (session.city || session.utmSource || session.referrerUrl) ? "6px" : "10px", display: "flex", alignItems: "center", gap: "8px" }}>
+                          <span>Created {new Date(session.createdAt.toString()).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: displayTimezone })}</span>
+                          {(session.city || session.countryCode) && (
+                            <span style={{ display: "flex", alignItems: "center", gap: "3px" }}>
+                              <span style={{ color: "#b0b7bf" }}>·</span>
+                              <span>{[session.city, session.countryCode].filter(Boolean).join(", ")}</span>
+                            </span>
+                          )}
                         </div>
 
                         {(session.utmSource || session.referrerUrl) && (() => {
@@ -1817,6 +1838,44 @@ export default function Index() {
                       </tr>
                     );
                   })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Top Locations */}
+          {hasGeoData && (
+            <div style={{
+              background: "#ffffff",
+              border: "1px solid #e3e3e3",
+              borderRadius: "8px",
+              overflowX: "auto",
+              marginBottom: "20px",
+              boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
+            }}>
+              <div style={{ padding: "16px 16px 12px" }}>
+                <h3 style={{ fontSize: "15px", fontWeight: 600, color: "#202223", margin: 0 }}>Top Locations</h3>
+              </div>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ borderTop: "1px solid #e3e3e3", borderBottom: "1px solid #e3e3e3" }}>
+                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "left" }}>Location</th>
+                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Sessions</th>
+                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Cart adds</th>
+                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Orders</th>
+                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Conv. rate</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rTopLocations.map((row, idx) => (
+                    <tr key={idx} style={{ borderBottom: idx < rTopLocations.length - 1 ? "1px solid #f1f1f1" : "none" }}>
+                      <td style={{ padding: "10px 16px", fontSize: "13px", fontWeight: 500, color: "#202223" }}>{row.location}</td>
+                      <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{row.sessions}</td>
+                      <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{row.cartAdds}</td>
+                      <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{row.orders}</td>
+                      <td style={{ padding: "10px 16px", fontSize: "13px", color: "#008060", textAlign: "right", fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>{row.convRate.toFixed(1)}%</td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
