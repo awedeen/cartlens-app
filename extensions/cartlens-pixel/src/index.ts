@@ -31,19 +31,30 @@ register(({ analytics, browser, settings, init }) => {
     console.error("[CartLens Pixel] No app_url configured — events will not be sent");
   }
 
-  // Helper: capture UTMs from a URL search string and persist in sessionStorage
+  // Helper: capture UTMs from a URL (href or search string) and persist in sessionStorage
   // Must be called from inside an event handler (sessionStorage not available at top level)
-  const captureUtmsFromSearch = (search: string) => {
-    if (!search || browser.sessionStorage.get("cartlens_utm_source")) return;
-    const params = new URLSearchParams(search);
-    const src = params.get("utm_source");
-    if (src) {
-      browser.sessionStorage.set("cartlens_utm_source", src);
-      const med = params.get("utm_medium"); if (med) browser.sessionStorage.set("cartlens_utm_medium", med);
-      const cam = params.get("utm_campaign"); if (cam) browser.sessionStorage.set("cartlens_utm_campaign", cam);
-      const con = params.get("utm_content"); if (con) browser.sessionStorage.set("cartlens_utm_content", con);
-      const uid = params.get("utm_id") || params.get("fbclid"); if (uid) browser.sessionStorage.set("cartlens_utm_id", uid);
-    }
+  // Accepts full href or just the search string
+  const captureUtmsFromUrl = (urlOrSearch: string) => {
+    if (!urlOrSearch || browser.sessionStorage.get("cartlens_utm_source")) return;
+    try {
+      // Extract search string — handle both full URLs and ?query strings
+      let search = urlOrSearch;
+      if (urlOrSearch.includes("://") || urlOrSearch.startsWith("/")) {
+        // Full URL or path — parse it
+        const u = urlOrSearch.startsWith("http") ? new URL(urlOrSearch) : new URL(urlOrSearch, "https://x.invalid");
+        search = u.search;
+      }
+      if (!search) return;
+      const params = new URLSearchParams(search);
+      const src = params.get("utm_source");
+      if (src) {
+        browser.sessionStorage.set("cartlens_utm_source", src);
+        const med = params.get("utm_medium"); if (med) browser.sessionStorage.set("cartlens_utm_medium", med);
+        const cam = params.get("utm_campaign"); if (cam) browser.sessionStorage.set("cartlens_utm_campaign", cam);
+        const con = params.get("utm_content"); if (con) browser.sessionStorage.set("cartlens_utm_content", con);
+        const uid = params.get("utm_id") || params.get("fbclid"); if (uid) browser.sessionStorage.set("cartlens_utm_id", uid);
+      }
+    } catch { /* ignore parse errors */ }
   };
 
   // Helper to send events to backend
@@ -90,18 +101,15 @@ register(({ analytics, browser, settings, init }) => {
   // Subscribe to product_added_to_cart
   analytics.subscribe("product_added_to_cart", (event) => {
     const cartLine = event.data?.cartLine;
-    // Capture UTMs — try event context first, then init context (init has full URL at page render)
-    const search = event.context?.document?.location?.search
-      || (init as any)?.context?.document?.location?.search
-      || "";
+    // Capture UTMs — try all available URL sources
     const href = event.context?.document?.location?.href
       || (init as any)?.context?.document?.location?.href
       || "";
-    captureUtmsFromSearch(search);
-    // Also try parsing from full href in case search is stripped
-    if (!browser.sessionStorage.get("cartlens_utm_source") && href) {
-      try { captureUtmsFromSearch(new URL(href).search); } catch {}
-    }
+    const search = event.context?.document?.location?.search
+      || (init as any)?.context?.document?.location?.search
+      || "";
+    // Try href first (full URL), fall back to search string
+    captureUtmsFromUrl(href || search);
     if (!browser.sessionStorage.get("cartlens_landing_page") && href) {
       browser.sessionStorage.set("cartlens_landing_page", href);
     }
@@ -145,13 +153,8 @@ register(({ analytics, browser, settings, init }) => {
     const href = context?.document?.location?.href;
     const referrer = context?.document?.referrer || null;
 
-    // Capture UTMs from current page URL (first page in session wins)
-    const search = context?.document?.location?.search || "";
-    captureUtmsFromSearch(search);
-    // Also try parsing from href directly in case search is empty
-    if (!browser.sessionStorage.get("cartlens_utm_source") && href) {
-      try { captureUtmsFromSearch(new URL(href).search); } catch {}
-    }
+    // Capture UTMs from current page URL
+    captureUtmsFromUrl(href || context?.document?.location?.search || "");
 
     // Store landing page if not already set
     if (!browser.sessionStorage.get("cartlens_landing_page") && href) {
