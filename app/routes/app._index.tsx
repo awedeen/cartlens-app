@@ -408,6 +408,54 @@ export default function Index() {
     };
   }, [data.shopId]);
 
+  // Map UTM source+medium to a simplified channel label + color
+  const getTrafficChannel = (utmSource: string | null, utmMedium: string | null): { label: string; color: string; bg: string } => {
+    const src = (utmSource || "").toLowerCase();
+    const med = (utmMedium || "").toLowerCase();
+
+    if (!src) return { label: "Direct", color: "#6d7175", bg: "#f6f6f7" };
+
+    // Paid social
+    if (["meta", "facebook", "instagram", "fb"].some(s => src.includes(s)) || med === "paid_social" || (med === "paid" && ["meta","facebook","instagram","fb"].some(s => src.includes(s))))
+      return { label: "Paid Social", color: "#1877f2", bg: "#e7f0fd" };
+
+    // Organic social
+    if (["facebook", "instagram", "twitter", "tiktok", "pinterest", "snapchat", "linkedin", "youtube"].some(s => src.includes(s)) && med !== "cpc" && med !== "paid")
+      return { label: "Organic Social", color: "#8b5cf6", bg: "#f3f0ff" };
+
+    // TikTok (paid)
+    if (src.includes("tiktok") && (med === "cpc" || med === "paid" || med === "paid_social"))
+      return { label: "TikTok Ads", color: "#010101", bg: "#f0f0f0" };
+
+    // Google paid
+    if ((src.includes("google") || src.includes("adwords")) && (med === "cpc" || med === "ppc" || med === "paid"))
+      return { label: "Google Ads", color: "#34a853", bg: "#e6f4ea" };
+
+    // Organic search
+    if (["google", "bing", "yahoo", "duckduckgo", "baidu"].some(s => src.includes(s)) || med === "organic")
+      return { label: "Organic Search", color: "#ea8600", bg: "#fff4e5" };
+
+    // Email
+    if (src.includes("email") || src.includes("klaviyo") || src.includes("mailchimp") || src.includes("newsletter") || med === "email")
+      return { label: "Email", color: "#7c3aed", bg: "#f5f3ff" };
+
+    // SMS
+    if (src.includes("sms") || med === "sms" || src.includes("attentive") || src.includes("postscript"))
+      return { label: "SMS", color: "#059669", bg: "#ecfdf5" };
+
+    // Affiliates / influencers
+    if (med === "affiliate" || med === "influencer" || src.includes("affiliate"))
+      return { label: "Affiliate", color: "#b45309", bg: "#fffbeb" };
+
+    // Generic paid
+    if (med === "cpc" || med === "paid" || med === "ppc" || med === "paidsocial")
+      return { label: "Paid", color: "#0070f3", bg: "#e6f0fd" };
+
+    // Fallback — show source name
+    const display = utmSource!.charAt(0).toUpperCase() + utmSource!.slice(1);
+    return { label: display, color: "#6d7175", bg: "#f6f6f7" };
+  };
+
   const formatTimeAgo = (date: string) => {
     const now = new Date();
     const past = new Date(date);
@@ -670,18 +718,18 @@ export default function Index() {
     .slice(0, 10);
 
   // UTM source/medium breakdown for selected range
-  const rUtmMap: Record<string, { sessions: number; cartAdds: number; orders: number }> = {};
+  const rUtmMap: Record<string, { utmSource: string | null; utmMedium: string | null; sessions: number; cartAdds: number; orders: number }> = {};
   for (const s of filteredForReports) {
     const key = s.utmSource
-      ? (s.utmMedium ? `${s.utmSource} / ${s.utmMedium}` : s.utmSource)
-      : "Direct";
-    if (!rUtmMap[key]) rUtmMap[key] = { sessions: 0, cartAdds: 0, orders: 0 };
+      ? (s.utmMedium ? `${s.utmSource}||${s.utmMedium}` : s.utmSource)
+      : "__direct__";
+    if (!rUtmMap[key]) rUtmMap[key] = { utmSource: s.utmSource, utmMedium: s.utmMedium, sessions: 0, cartAdds: 0, orders: 0 };
     rUtmMap[key].sessions += 1;
     if (s.cartCreated) rUtmMap[key].cartAdds += 1;
     if (s.orderPlaced) rUtmMap[key].orders += 1;
   }
   const rUtmBreakdown = Object.entries(rUtmMap)
-    .map(([source, d]) => ({ source, sessions: d.sessions, cartAdds: d.cartAdds, orders: d.orders, convRate: d.cartAdds > 0 ? (d.orders / d.cartAdds) * 100 : 0 }))
+    .map(([, d]) => ({ utmSource: d.utmSource, utmMedium: d.utmMedium, sessions: d.sessions, cartAdds: d.cartAdds, orders: d.orders, convRate: d.cartAdds > 0 ? (d.orders / d.cartAdds) * 100 : 0 }))
     .sort((a, b) => b.sessions - a.sessions)
     .slice(0, 10);
   const hasUtmData = filteredForReports.some(s => s.utmSource);
@@ -871,7 +919,7 @@ export default function Index() {
                   {selectedSession.landingPage && (
                     <div>
                       <div style={{ fontSize: "12px", color: "#6d7175", marginBottom: "4px" }}>Landing Page</div>
-                      <div style={{ fontSize: "14px", color: "#202223", wordBreak: "break-all", fontFamily: "monospace", fontSize: "12px" }}>
+                      <div style={{ fontSize: "12px", color: "#202223", wordBreak: "break-all", fontFamily: "monospace" }}>
                         {selectedSession.landingPage}
                       </div>
                     </div>
@@ -1287,20 +1335,25 @@ export default function Index() {
                           Created {new Date(session.createdAt.toString()).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: displayTimezone })}
                         </div>
 
-                        {(session.utmSource || session.referrerUrl) && (
-                          <div style={{ fontSize: "11px", color: "#6d7175", marginBottom: "10px", display: "flex", alignItems: "center", gap: "4px" }}>
-                            <span style={{ color: "#919eab" }}>via</span>
-                            {session.utmSource ? (
-                              <span style={{ fontWeight: 600, color: "#0366d6" }}>
-                                {session.utmSource}{session.utmMedium ? ` / ${session.utmMedium}` : ""}
+                        {(session.utmSource || session.referrerUrl) && (() => {
+                          const channel = getTrafficChannel(session.utmSource, session.utmMedium);
+                          return (
+                            <div style={{ marginBottom: "10px" }}>
+                              <span style={{
+                                display: "inline-block",
+                                fontSize: "11px",
+                                fontWeight: 600,
+                                color: channel.color,
+                                background: channel.bg,
+                                padding: "2px 8px",
+                                borderRadius: "4px",
+                                letterSpacing: "0.2px"
+                              }}>
+                                {channel.label}
                               </span>
-                            ) : (
-                              <span style={{ color: "#6d7175", maxWidth: "200px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                {(() => { try { return new URL(session.referrerUrl!).hostname; } catch { return session.referrerUrl; } })()}
-                              </span>
-                            )}
-                          </div>
-                        )}
+                            </div>
+                          );
+                        })()}
 
                         <CollapsibleProducts session={session} />
                         <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "8px" }}>
@@ -1560,10 +1613,17 @@ export default function Index() {
                   </tr>
                 </thead>
                 <tbody>
-                  {rUtmBreakdown.map((row, idx) => (
+                  {rUtmBreakdown.map((row, idx) => {
+                    const ch = getTrafficChannel(row.utmSource, row.utmMedium);
+                    return (
                     <tr key={idx} style={{ borderBottom: idx < rUtmBreakdown.length - 1 ? "1px solid #f1f1f1" : "none" }}>
-                      <td style={{ padding: "10px 16px", fontSize: "13px", fontWeight: 500, color: "#202223", maxWidth: "200px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {row.source}
+                      <td style={{ padding: "10px 16px" }}>
+                        <span style={{ fontSize: "12px", fontWeight: 600, color: ch.color, background: ch.bg, padding: "2px 8px", borderRadius: "4px" }}>
+                          {ch.label}
+                        </span>
+                        {row.utmMedium && (
+                          <span style={{ fontSize: "11px", color: "#919eab", marginLeft: "6px" }}>{row.utmMedium}</span>
+                        )}
                       </td>
                       <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
                         {row.sessions}
@@ -1578,7 +1638,8 @@ export default function Index() {
                         {row.convRate.toFixed(1)}%
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
