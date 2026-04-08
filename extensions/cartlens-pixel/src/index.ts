@@ -98,8 +98,9 @@ register(({ analytics, browser, settings, init }) => {
         },
         body: JSON.stringify(payload),
       });
-    } catch (error) {
-      // Silently fail — pixel events are best-effort
+    } catch (error: any) {
+      // Log fetch failures so we can debug via Pixel Helper console
+      console.error("[CartLens] fetch failed:", error?.message || error);
     }
   };
 
