@@ -4,16 +4,6 @@
 import { register } from "@shopify/web-pixels-extension";
 
 register(({ analytics, browser, settings, init }) => {
-  // Generate or retrieve visitor ID
-  const getVisitorId = (): string => {
-    let visitorId = browser.cookie.get("cartlens_visitor_id");
-    if (!visitorId) {
-      visitorId = `v_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
-      browser.cookie.set("cartlens_visitor_id", visitorId);
-    }
-    return visitorId;
-  };
-
   // Capture customer data from init context (available when customer is logged in)
   const customer = init.data?.customer;
   const customerData = customer ? {
@@ -31,44 +21,108 @@ register(({ analytics, browser, settings, init }) => {
     console.error("[CartLens Pixel] No app_url configured — events will not be sent");
   }
 
-  // UTM helpers using browser.localStorage for cross-page persistence
-  // localStorage survives page navigation (unlike in-memory which dies on redirect-to-cart)
-  // Keys are prefixed with cl_ to avoid collisions
-  const ls = browser.localStorage;
-  const lsGet = (key: string): string | null => { try { return ls.getItem(`cl_${key}`); } catch { return null; } };
-  const lsSet = (key: string, val: string) => { try { ls.setItem(`cl_${key}`, val); } catch {} };
-  const lsHas = (key: string): boolean => lsGet(key) !== null;
+  // In-memory UTM store — populated on first page_viewed event from URL params
+  // Persists for the lifetime of this pixel sandbox instance (single page load)
+  // For cross-page persistence we encode UTMs into the visitor cookie value
+  const utmStore: {
+    utmSource: string | null;
+    utmMedium: string | null;
+    utmCampaign: string | null;
+    utmContent: string | null;
+    utmId: string | null;
+    landingPage: string | null;
+  } = {
+    utmSource: null, utmMedium: null, utmCampaign: null,
+    utmContent: null, utmId: null, landingPage: null,
+  };
 
-  // Capture UTMs from a URL and persist to localStorage (first call per session wins)
+  // Parse UTMs from a URL string and store in memory (first call wins)
   const captureUtmsFromUrl = (urlOrSearch: string) => {
-    if (!urlOrSearch || lsHas("utmSource")) return;
+    if (!urlOrSearch) return;
     try {
       let search = urlOrSearch;
       if (urlOrSearch.includes("://") || urlOrSearch.startsWith("/")) {
         const u = urlOrSearch.startsWith("http") ? new URL(urlOrSearch) : new URL(urlOrSearch, "https://x.invalid");
         search = u.search;
-        if (!lsHas("landingPage")) lsSet("landingPage", urlOrSearch.startsWith("http") ? urlOrSearch : u.toString());
+        if (!utmStore.landingPage) utmStore.landingPage = urlOrSearch.startsWith("http") ? urlOrSearch : u.toString();
       }
       if (!search) return;
       const params = new URLSearchParams(search);
       const src = params.get("utm_source");
-      if (src) {
-        lsSet("utmSource", src);
-        const med = params.get("utm_medium"); if (med) lsSet("utmMedium", med);
-        const cam = params.get("utm_campaign"); if (cam) lsSet("utmCampaign", cam);
-        const con = params.get("utm_content"); if (con) lsSet("utmContent", con);
-        const uid = params.get("utm_id") || params.get("fbclid"); if (uid) lsSet("utmId", uid);
+      if (src && !utmStore.utmSource) {
+        utmStore.utmSource = src;
+        utmStore.utmMedium = params.get("utm_medium");
+        utmStore.utmCampaign = params.get("utm_campaign");
+        utmStore.utmContent = params.get("utm_content");
+        utmStore.utmId = params.get("utm_id") || params.get("fbclid");
       }
     } catch { /* ignore parse errors */ }
   };
 
+  // Parse UTM cookie value — format: "src|med|cam|con|uid|landingPage"
+  const parseUtmCookie = (val: string) => {
+    const parts = val.split("|");
+    if (parts[0]) utmStore.utmSource = parts[0] || null;
+    if (parts[1]) utmStore.utmMedium = parts[1] || null;
+    if (parts[2]) utmStore.utmCampaign = parts[2] || null;
+    if (parts[3]) utmStore.utmContent = parts[3] || null;
+    if (parts[4]) utmStore.utmId = parts[4] || null;
+    if (parts[5]) utmStore.landingPage = decodeURIComponent(parts[5] || "");
+  };
+
+  const encodeUtmCookie = () =>
+    [
+      utmStore.utmSource || "",
+      utmStore.utmMedium || "",
+      utmStore.utmCampaign || "",
+      utmStore.utmContent || "",
+      utmStore.utmId || "",
+      encodeURIComponent(utmStore.landingPage || ""),
+    ].join("|");
+
+  // Generate a random visitor ID
+  const generateVisitorId = () => `v_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+
+  // Visitor ID — resolved async from cookie, falls back to generated
+  let resolvedVisitorId: string | null = null;
+
+  const getOrCreateVisitorId = async (): Promise<string> => {
+    if (resolvedVisitorId) return resolvedVisitorId;
+    try {
+      const existing = await browser.cookie.get("cl_vid");
+      if (existing && typeof existing === "string" && existing.startsWith("v_")) {
+        resolvedVisitorId = existing;
+        return resolvedVisitorId;
+      }
+    } catch {}
+    resolvedVisitorId = generateVisitorId();
+    try { await browser.cookie.set("cl_vid", resolvedVisitorId); } catch {}
+    return resolvedVisitorId;
+  };
+
+  // Load UTMs from cookie on first run (cross-page persistence)
+  const loadUtmCookie = async () => {
+    if (utmStore.utmSource) return; // already populated from URL
+    try {
+      const val = await browser.cookie.get("cl_utm");
+      if (val && typeof val === "string") parseUtmCookie(val);
+    } catch {}
+  };
+
+  // Save UTMs to cookie after capturing from URL
+  const saveUtmCookie = async () => {
+    if (!utmStore.utmSource) return;
+    try { await browser.cookie.set("cl_utm", encodeUtmCookie()); } catch {}
+  };
+
   // Helper to send events to backend
   const sendEvent = async (eventType: string, data: any = {}) => {
-    const visitorId = getVisitorId();
+    const visitorId = await getOrCreateVisitorId();
+    await loadUtmCookie();
 
-    // Get device/browser info
-    const deviceType = browser.userAgent.match(/mobile/i) ? "mobile" :
-                       browser.userAgent.match(/tablet/i) ? "tablet" : "desktop";
+    // Get device type from user agent (safe null check — userAgent may not be typed but is available at runtime)
+    const ua = (typeof (browser as any).userAgent === "string" ? (browser as any).userAgent : "") || "";
+    const deviceType = ua.match(/mobile/i) ? "mobile" : ua.match(/tablet/i) ? "tablet" : "desktop";
 
     const payload = {
       shopDomain,
@@ -76,14 +130,13 @@ register(({ analytics, browser, settings, init }) => {
       visitorId,
       timestamp: new Date().toISOString(),
       deviceType,
-      userAgent: browser.userAgent,
-      // Include UTMs + landing page from localStorage (persists across page navigations)
-      utmSource: lsGet("utmSource"),
-      utmMedium: lsGet("utmMedium"),
-      utmCampaign: lsGet("utmCampaign"),
-      utmContent: lsGet("utmContent"),
-      utmId: lsGet("utmId"),
-      landingPage: lsGet("landingPage"),
+      userAgent: ua || undefined,
+      utmSource: utmStore.utmSource,
+      utmMedium: utmStore.utmMedium,
+      utmCampaign: utmStore.utmCampaign,
+      utmContent: utmStore.utmContent,
+      utmId: utmStore.utmId,
+      landingPage: utmStore.landingPage,
       ...customerData,
       ...data,
     };
@@ -93,27 +146,20 @@ register(({ analytics, browser, settings, init }) => {
     try {
       await fetch(apiEndpoint, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
     } catch (error: any) {
-      // Log fetch failures so we can debug via Pixel Helper console
       console.error("[CartLens] fetch failed:", error?.message || error);
     }
   };
 
   // Subscribe to product_added_to_cart
-  analytics.subscribe("product_added_to_cart", (event) => {
+  analytics.subscribe("product_added_to_cart", async (event) => {
     const cartLine = event.data?.cartLine;
-    // Capture UTMs — try all available URL sources (window.location is the correct pixel API path)
-    const href = event.context?.window?.location?.href
-      || event.context?.document?.location?.href
-      || (init as any)?.context?.window?.location?.href
-      || "";
+    const href = event.context?.window?.location?.href || event.context?.document?.location?.href || "";
     captureUtmsFromUrl(href);
-    if (!lsHas("landingPage") && href) lsSet("landingPage", href);
+    await saveUtmCookie();
 
     sendEvent("cart_add", {
       product: {
@@ -133,7 +179,6 @@ register(({ analytics, browser, settings, init }) => {
   // Subscribe to product_removed_from_cart
   analytics.subscribe("product_removed_from_cart", (event) => {
     const cartLine = event.data?.cartLine;
-
     sendEvent("cart_remove", {
       product: {
         id: cartLine?.merchandise?.product?.id,
@@ -148,18 +193,16 @@ register(({ analytics, browser, settings, init }) => {
     });
   });
 
-  // Subscribe to page_viewed — used for checkout abandonment detection
-  analytics.subscribe("page_viewed", (event) => {
+  // Subscribe to page_viewed — captures UTMs and landing page
+  analytics.subscribe("page_viewed", async (event) => {
     const context = event.context;
     const href = context?.document?.location?.href;
+    const pageHref = context?.window?.location?.href || href || "";
     const referrer = context?.document?.referrer || null;
 
-    // Capture UTMs from current page URL (window.location is the correct pixel API path)
-    const pageHref = context?.window?.location?.href || context?.document?.location?.href || href || "";
     captureUtmsFromUrl(pageHref);
-
-    // Store landing page if not already set
-    if (!lsHas("landingPage") && pageHref) lsSet("landingPage", pageHref);
+    if (!utmStore.landingPage && pageHref) utmStore.landingPage = pageHref;
+    await saveUtmCookie();
 
     sendEvent("page_view", {
       pageUrl: href,
@@ -171,9 +214,8 @@ register(({ analytics, browser, settings, init }) => {
   // Subscribe to checkout_started
   analytics.subscribe("checkout_started", (event) => {
     const checkout = event.data?.checkout;
-
     sendEvent("checkout_started", {
-      customerId: checkout?.customer?.id,
+      customerId: (checkout as any)?.customer?.id,
       customerEmail: checkout?.email,
       billingCity: checkout?.billingAddress?.city || null,
       billingCountry: checkout?.billingAddress?.country || null,
@@ -184,10 +226,9 @@ register(({ analytics, browser, settings, init }) => {
   // Subscribe to checkout_completed
   analytics.subscribe("checkout_completed", (event) => {
     const checkout = event.data?.checkout;
-
     sendEvent("checkout_completed", {
       orderId: checkout?.order?.id,
-      customerId: checkout?.customer?.id,
+      customerId: (checkout as any)?.customer?.id,
       customerEmail: checkout?.email,
       customerName: checkout?.billingAddress?.firstName && checkout?.billingAddress?.lastName
         ? `${checkout.billingAddress.firstName} ${checkout.billingAddress.lastName}`
