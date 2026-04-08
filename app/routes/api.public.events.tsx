@@ -236,9 +236,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         customerId: customerId || undefined,
         customerEmail: safeCustomerEmail || undefined,
         customerName: safeCustomerName || undefined,
-        city: city || undefined,
-        country: country || undefined,
-        countryCode: countryCode || undefined,
+        // Geo intentionally excluded from update — first geo wins to prevent location cycling
+        // (multiple events from same session can resolve different IPs/cities)
         // UTMs: update if present (backfills sessions that existed before a UTM visit)
         utmSource: safeUtmSource || undefined,
         utmMedium: safeUtmMedium || undefined,
