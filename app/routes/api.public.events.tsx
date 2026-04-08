@@ -22,7 +22,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 import { Prisma } from "@prisma/client";
 import prisma from "../db.server";
 import { detectBot } from "../services/bot.server";
-// Geo now handled via Cloudflare headers — no external API needed
+// Geo: Cloudflare headers when available, iplocate.io API fallback otherwise
 import sseManager from "../services/sse.server";
 import { checkRateLimit, sanitizeString } from "../utils/security.server";
 

@@ -717,10 +717,7 @@ export default function Index() {
   const rCarts = filteredForReports.filter(s => s.cartCreated).length;
   const rCheckouts = filteredForReports.filter(s => s.checkoutStarted).length;
   const rOrders = filteredForReports.filter(s => s.orderPlaced).length;
-  const rAvgCartValue = rCarts > 0
-    ? filteredForReports.filter(s => s.cartCreated).reduce((sum, s) => sum + s.cartTotal, 0) / rCarts
-    : 0;
-  void rAvgCartValue;
+  // rAvgCartValue removed — replaced by rRevenue
   const rConversionRate = rCarts > 0 ? (rOrders / rCarts) * 100 : 0;
   const rCheckoutRate = rCarts > 0 ? (rCheckouts / rCarts) * 100 : 0;
   const rCheckoutToOrderRate = rCheckouts > 0 ? (rOrders / rCheckouts) * 100 : 0;
