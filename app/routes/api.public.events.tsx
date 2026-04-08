@@ -96,8 +96,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     // Parse event payload
     const payload = await request.json();
-    // DEBUG: log UTM + visitorId from pixel payload
-    console.log("[CartLens DEBUG]", JSON.stringify({ vId: payload.visitorId, utmSrc: payload.utmSource, utmCam: payload.utmCampaign, lp: payload.landingPage?.slice(0,80), ip: cfIP, type: payload.eventType }));
     const {
       shopDomain,
       eventType,
@@ -238,8 +236,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         customerId: customerId || undefined,
         customerEmail: safeCustomerEmail || undefined,
         customerName: safeCustomerName || undefined,
-        // Geo intentionally excluded from update — first geo wins to prevent location cycling
-        // (multiple events from same session can resolve different IPs/cities)
+        city: city || undefined,
+        country: country || undefined,
+        countryCode: countryCode || undefined,
         // UTMs: update if present (backfills sessions that existed before a UTM visit)
         utmSource: safeUtmSource || undefined,
         utmMedium: safeUtmMedium || undefined,
