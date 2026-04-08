@@ -31,43 +31,6 @@ register(({ analytics, browser, settings, init }) => {
     console.error("[CartLens Pixel] No app_url configured — events will not be sent");
   }
 
-  // In-memory UTM store — persists for the page session without needing browser.sessionStorage
-  // browser.sessionStorage.get is not available in the strict app pixel sandbox
-  const utmStore: {
-    utmSource: string | null;
-    utmMedium: string | null;
-    utmCampaign: string | null;
-    utmContent: string | null;
-    utmId: string | null;
-    landingPage: string | null;
-  } = {
-    utmSource: null, utmMedium: null, utmCampaign: null,
-    utmContent: null, utmId: null, landingPage: null,
-  };
-
-  // Capture UTMs from a URL and store in memory (first call wins)
-  const captureUtmsFromUrl = (urlOrSearch: string) => {
-    if (!urlOrSearch || utmStore.utmSource) return;
-    try {
-      let search = urlOrSearch;
-      if (urlOrSearch.includes("://") || urlOrSearch.startsWith("/")) {
-        const u = urlOrSearch.startsWith("http") ? new URL(urlOrSearch) : new URL(urlOrSearch, "https://x.invalid");
-        search = u.search;
-        if (!utmStore.landingPage) utmStore.landingPage = urlOrSearch.startsWith("http") ? urlOrSearch : u.toString();
-      }
-      if (!search) return;
-      const params = new URLSearchParams(search);
-      const src = params.get("utm_source");
-      if (src) {
-        utmStore.utmSource = src;
-        utmStore.utmMedium = params.get("utm_medium");
-        utmStore.utmCampaign = params.get("utm_campaign");
-        utmStore.utmContent = params.get("utm_content");
-        utmStore.utmId = params.get("utm_id") || params.get("fbclid");
-      }
-    } catch { /* ignore parse errors */ }
-  };
-
   // Helper to send events to backend
   const sendEvent = async (eventType: string, data: any = {}) => {
     const visitorId = getVisitorId();
@@ -83,13 +46,6 @@ register(({ analytics, browser, settings, init }) => {
       timestamp: new Date().toISOString(),
       deviceType,
       userAgent: browser.userAgent,
-      // Include UTMs + landing page from in-memory store (populated by first event with URL data)
-      utmSource: utmStore.utmSource,
-      utmMedium: utmStore.utmMedium,
-      utmCampaign: utmStore.utmCampaign,
-      utmContent: utmStore.utmContent,
-      utmId: utmStore.utmId,
-      landingPage: utmStore.landingPage,
       ...customerData,
       ...data,
     };
@@ -112,13 +68,6 @@ register(({ analytics, browser, settings, init }) => {
   // Subscribe to product_added_to_cart
   analytics.subscribe("product_added_to_cart", (event) => {
     const cartLine = event.data?.cartLine;
-    // Capture UTMs — try all available URL sources (window.location is the correct pixel API path)
-    const href = event.context?.window?.location?.href
-      || event.context?.document?.location?.href
-      || (init as any)?.context?.window?.location?.href
-      || "";
-    captureUtmsFromUrl(href);
-    if (!utmStore.landingPage && href) utmStore.landingPage = href;
 
     sendEvent("cart_add", {
       product: {
@@ -156,21 +105,27 @@ register(({ analytics, browser, settings, init }) => {
   // Subscribe to page_viewed — used for checkout abandonment detection
   analytics.subscribe("page_viewed", (event) => {
     const context = event.context;
-    const href = context?.document?.location?.href;
-    const referrer = context?.document?.referrer || null;
-
-    // Capture UTMs from current page URL (window.location is the correct pixel API path)
-    const pageHref = context?.window?.location?.href || context?.document?.location?.href || href || "";
-    captureUtmsFromUrl(pageHref);
-
-    // Store landing page if not already set
-    if (!utmStore.landingPage && pageHref) utmStore.landingPage = pageHref;
 
     sendEvent("page_view", {
-      pageUrl: href,
+      pageUrl: context?.document?.location?.href,
       pageTitle: context?.document?.title,
-      referrerUrl: referrer,
+      referrerUrl: context?.document?.referrer,
+      landingPage: browser.sessionStorage.get("cartlens_landing_page") || context?.document?.location?.href,
+      utmSource: context?.document?.location?.search?.includes("utm_source")
+        ? new URLSearchParams(context?.document?.location?.search).get("utm_source")
+        : null,
+      utmMedium: context?.document?.location?.search?.includes("utm_medium")
+        ? new URLSearchParams(context?.document?.location?.search).get("utm_medium")
+        : null,
+      utmCampaign: context?.document?.location?.search?.includes("utm_campaign")
+        ? new URLSearchParams(context?.document?.location?.search).get("utm_campaign")
+        : null,
     });
+
+    // Store landing page in session
+    if (!browser.sessionStorage.get("cartlens_landing_page")) {
+      browser.sessionStorage.set("cartlens_landing_page", context?.document?.location?.href || "");
+    }
   });
 
   // Subscribe to checkout_started
