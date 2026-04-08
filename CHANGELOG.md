@@ -1,121 +1,56 @@
-# @shopify/shopify-app-template-react-router
+# CartLens Changelog
 
-## 2026.01.08
-- [#170](https://github.com/Shopify/shopify-app-template-react-router/pull/170) - Update React Router minimum version to v7.12.0
+## [Unreleased] — dev branch (pending merge to main)
 
-## 2025.12.11
+### Infrastructure & DevOps
+- **Branch protection** — `main` branch now requires PR + review before merging. Direct pushes blocked via GitHub ruleset.
+- **Staging environment** — Railway `staging` environment created, auto-deploys from `dev` branch. URL: `cartlens-app-staging.up.railway.app`
+- **Health check endpoint** — `GET /health` returns `{status, db, ts}`. Configured as Railway healthcheck path on both environments.
+- **Cleanup cron trigger** — `POST /api/internal/cleanup` endpoint added as secondary trigger for 90-day data retention. Primary trigger remains Railway cron service (`0 2 * * *`).
+- **Structured logger** — `app/services/logger.server.ts` added. Consistent `[LEVEL] [timestamp] [context] message` format across server logs.
+- **CLEANUP_SECRET** — env var added to both production and staging Railway environments.
+- **CONTRIBUTING.md** — documents branch protection rules and three-surface deployment model (backend / DB migrations / pixel extension).
 
-- [#151](https://github.com/Shopify/shopify-app-template-react-router/pull/151) Update `@shopify/shopify-app-react-router` to v1.1.0 and `@shopify/shopify-app-session-storage-prisma` to v8.0.0, add refresh token fields (`refreshToken` and `refreshTokenExpires`) to Session model in Prisma schema, and adopt the `expiringOfflineAccessTokens` flag for enhanced security through token rotation. See [expiring vs non-expiring offline tokens](https://shopify.dev/docs/apps/build/authentication-authorization/access-tokens/offline-access-tokens#expiring-vs-non-expiring-offline-tokens) for more information.
+### Bug Fixes
+- **CORS headers on public events endpoint** — pixel sandbox (`extensions.shopifycdn.com`) requires CORS. Added `Access-Control-Allow-Origin: *` and OPTIONS preflight handling to `api.public.events.tsx`. Fixes device/location/UTM data never populating on production.
+- **Webhook dedup** — `webhooks.carts.tsx` now deduplicates on `x-shopify-webhook-id` with 10-minute TTL. Prevents duplicate `cart_add`/`cart_remove` events from Shopify retries.
+- **UTM backfill on existing sessions** — upsert update path in `api.public.events.tsx` now includes UTM fields. Previously, returning visitors with UTMs in the URL had null UTM data because the update path skipped those fields.
 
-## 2025.10.10
+### UTM Attribution (New Feature)
+- **Schema** — added `utmContent String?`, `utmId String?`, `deviceModel String?` to `CartSession` via Prisma migrations.
+- **Pixel UTM capture** — replaced `browser.sessionStorage` (unavailable in strict pixel sandbox) with in-memory `utmStore` closure variable. UTMs captured from `event.context.window.location.href` on both `page_viewed` and `product_added_to_cart` events.
+- **API** — `api.public.events.tsx` now accepts and stores `utmContent`, `utmId`, `deviceModel`.
+- **IP Geolocation** — falls back to `iplocate.io` API (free, 1k/day) when Cloudflare headers unavailable (Railway uses Fastly, not Cloudflare). 1.5s timeout, non-fatal.
 
-- [#95](https://github.com/Shopify/shopify-app-template-react-router/pull/95) Swap the product link for [admin intents](https://shopify.dev/docs/apps/build/admin/admin-intents).
+### Dashboard UI — Live Carts Tab
+- **Time filter** — 24h / 7d / 30d toggle on Live Carts list view. Defaults to 24h. Session count badge updates with filter.
+- **Card visual distinction** — converted sessions get green left border + light green tint. Checkout-started sessions get amber left border.
+- **Traffic source badges** — color-coded channel badges on each card (Facebook Ads blue, Instagram Ads pink, Google Ads green, Email purple, SMS teal, TikTok black, Direct gray, etc.).
+- **Geo location on cards** — city + country shown inline with created date: `Created Apr 5, 2:30 PM · Los Angeles, US`.
+- **"View details →"** affordance on cards so merchants know they're clickable.
+- **Detail view — Traffic section** — unified section showing channel badge + campaign name + full landing URL in monospace selectable block.
+- **Detail view — deviceModel** — Device row now shows model when available (e.g. "iPhone · Safari").
 
-## 2025.10.02
+### Dashboard UI — Reports Tab
+- **Removed**: Top Referrers table (redundant with Channel Performance).
+- **Removed**: Funnel section (redundant with summary cards + Channel Performance).
+- **Added**: Channel Performance table — carts / checkouts / orders / conv. rate by traffic source. Sortable.
+- **Added**: Top Campaigns table — by `utm_campaign`, shows cart adds / orders / revenue / conv. rate. Sortable.
+- **Added**: Top Abandoned Products table — products added to cart in non-converting sessions. Sortable.
+- **Added**: Top Locations table — sessions / cart adds / orders / conv. rate by city + country. Sortable.
+- **Changed**: "Avg Cart Value" card → "Revenue" card (sum of `orderValue` for converted sessions).
+- **Added**: Empty state when no data in selected date range.
+- **Added**: Export CSV button in Reports header, respects the selected date range (7d/30d/90d).
+- **Added**: Variant breakdown in Top Products — `+`/`−` expand per product row. Only shows for products with real variant titles (not Shopify default variants).
+- **Fixed**: Sort indicator uses `opacity: 0` when inactive to prevent column width shift on click.
+- **Fixed**: Variant sub-rows now populate checkouts and orders (not just cart adds).
 
-- [#81](https://github.com/Shopify/shopify-app-template-react-router/pull/81) Add shopify global to eslint for ui extensions
+### Channel Detection
+- Comprehensive traffic source mapping: Facebook Ads (`fb`), Instagram Ads (`ig`), Meta Ads (`an`/`messenger`/`meta`), TikTok Ads, Google Ads, Organic Search, Email (Klaviyo/Mailchimp/etc.), SMS (Attentive/Postscript), Pinterest, Snapchat, YouTube, Affiliate, Paid (generic).
+- fbclid/gclid detection for click-ID based attribution.
 
-## 2025.10.01
-
-- [#79](https://github.com/Shopify/shopify-app-template-react-router/pull/78) Update API version to 2025-10.
-- [#77](https://github.com/Shopify/shopify-app-template-react-router/pull/77) Update `@shopify/shopify-app-react-router` to V1.
-- [#73](https://github.com/Shopify/shopify-app-template-react-router/pull/73/files) Rename @shopify/app-bridge-ui-types to @shopify/polaris-types
-
-## 2025.08.30
-
-- [#70](https://github.com/Shopify/shopify-app-template-react-router/pull/70/files) Upgrade `@shopify/app-bridge-ui-types` from 0.2.1 to 0.3.1.
-
-## 2025.08.17
-
-- [#58](https://github.com/Shopify/shopify-app-template-react-router/pull/58) Update Shopify & React Router dependencies.  Use Shopify React Router in graphqlrc, not shopify-api
-- [#57](https://github.com/Shopify/shopify-app-template-react-router/pull/57) Update Webhook API version in `shopify.app.toml` to `2025-07`
-- [#56](https://github.com/Shopify/shopify-app-template-react-router/pull/56) Remove local CLI from package.json in favor of global CLI installation
-- [#53](https://github.com/Shopify/shopify-app-template-react-router/pull/53) Add the Shopify Dev MCP to the template
-
-## 2025.08.16
-
-- [#52](https://github.com/Shopify/shopify-app-template-react-router/pull/52) Use `ApiVersion.July25` rather than `LATEST_API_VERSION` in `.graphqlrc`.
-
-## 2025.07.24
-
-- [14](https://github.com/Shopify/shopify-app-template-react-router/pull/14/files) Add [App Bridge web components](https://shopify.dev/docs/api/app-home/app-bridge-web-components) to the template.
-
-## July 2025
-
-Forked the [shopify-app-template repo](https://github.com/Shopify/shopify-app-template-remix)
-
-# @shopify/shopify-app-template-remix
-
-## 2025.03.18
-
--[#998](https://github.com/Shopify/shopify-app-template-remix/pull/998) Update to Vite 6
-
-## 2025.03.01
-
-- [#982](https://github.com/Shopify/shopify-app-template-remix/pull/982) Add Shopify Dev Assistant extension to the VSCode extension recommendations
-
-## 2025.01.31
-
-- [#952](https://github.com/Shopify/shopify-app-template-remix/pull/952) Update to Shopify App API v2025-01
-
-## 2025.01.23
-
-- [#923](https://github.com/Shopify/shopify-app-template-remix/pull/923) Update `@shopify/shopify-app-session-storage-prisma` to v6.0.0
-
-## 2025.01.8
-
-- [#923](https://github.com/Shopify/shopify-app-template-remix/pull/923) Enable GraphQL autocomplete for Javascript
-
-## 2024.12.19
-
-- [#904](https://github.com/Shopify/shopify-app-template-remix/pull/904) bump `@shopify/app-bridge-react` to latest
--
-## 2024.12.18
-
-- [875](https://github.com/Shopify/shopify-app-template-remix/pull/875) Add Scopes Update Webhook
-## 2024.12.05
-
-- [#910](https://github.com/Shopify/shopify-app-template-remix/pull/910) Install `openssl` in Docker image to fix Prisma (see [#25817](https://github.com/prisma/prisma/issues/25817#issuecomment-2538544254))
-- [#907](https://github.com/Shopify/shopify-app-template-remix/pull/907) Move `@remix-run/fs-routes` to `dependencies` to fix Docker image build
-- [#899](https://github.com/Shopify/shopify-app-template-remix/pull/899) Disable v3_singleFetch flag
-- [#898](https://github.com/Shopify/shopify-app-template-remix/pull/898) Enable the `removeRest` future flag so new apps aren't tempted to use the REST Admin API.
-
-## 2024.12.04
-
-- [#891](https://github.com/Shopify/shopify-app-template-remix/pull/891) Enable remix future flags.
-
-## 2024.11.26
-
-- [888](https://github.com/Shopify/shopify-app-template-remix/pull/888) Update restResources version to 2024-10
-
-## 2024.11.06
-
-- [881](https://github.com/Shopify/shopify-app-template-remix/pull/881) Update to the productCreate mutation to use the new ProductCreateInput type
-
-## 2024.10.29
-
-- [876](https://github.com/Shopify/shopify-app-template-remix/pull/876) Update shopify-app-remix to v3.4.0 and shopify-app-session-storage-prisma to v5.1.5
-
-## 2024.10.02
-
-- [863](https://github.com/Shopify/shopify-app-template-remix/pull/863) Update to Shopify App API v2024-10 and shopify-app-remix v3.3.2
-
-## 2024.09.18
-
-- [850](https://github.com/Shopify/shopify-app-template-remix/pull/850) Removed "~" import alias
-
-## 2024.09.17
-
-- [842](https://github.com/Shopify/shopify-app-template-remix/pull/842) Move webhook processing to individual routes
-
-## 2024.08.19
-
-Replaced deprecated `productVariantUpdate` with `productVariantsBulkUpdate`
-
-## v2024.08.06
-
-Allow `SHOP_REDACT` webhook to process without admin context
-
-## v2024.07.16
-
-Started tracking changes and releases using calver
+### Post-Merge Actions Required
+1. Merge `dev` → `main` on GitHub (Railway auto-deploys backend + runs DB migrations)
+2. Verify Railway production deployment is green
+3. Run `npx shopify app deploy --force` to push updated pixel extension to Shopify CDN
+4. Smoke test: install on a real store, add to cart with UTM URL, verify session appears with geo + UTM data
