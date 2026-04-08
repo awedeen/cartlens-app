@@ -739,6 +739,7 @@ export default function Index() {
       if (!rVariantMap[key]) rVariantMap[key] = {};
       if (!rVariantMap[key][variantKey]) rVariantMap[key][variantKey] = { variantTitle: e.variantTitle || null, cartAdds: 0, checkouts: 0, conversions: 0 };
       rVariantMap[key][variantKey].cartAdds += 1;
+      if (s.checkoutStarted) rVariantMap[key][variantKey].checkouts += 1;
       if (s.orderPlaced) rVariantMap[key][variantKey].conversions += 1;
     }
     const ciProductIds = new Set(evts.filter((e: any) => e.eventType === "checkout_item").map((e: any) => e.productId).filter(Boolean));
@@ -1645,7 +1646,7 @@ export default function Index() {
                     <tbody>
                       {sortedProducts.map((product, idx) => {
                         const isExpanded = expandedProducts.has(product.productId);
-                        const variants = rVariantMap[product.productId] ? Object.entries(rVariantMap[product.productId]).map(([vid, v]) => ({ variantId: vid, variantTitle: v.variantTitle, cartAdds: v.cartAdds, conversions: v.conversions, conversionRate: v.cartAdds > 0 ? (v.conversions / v.cartAdds) * 100 : 0 })).sort((a, b) => b.cartAdds - a.cartAdds) : [];
+                        const variants = rVariantMap[product.productId] ? Object.entries(rVariantMap[product.productId]).map(([vid, v]) => ({ variantId: vid, variantTitle: v.variantTitle, cartAdds: v.cartAdds, checkouts: v.checkouts, conversions: v.conversions, conversionRate: v.cartAdds > 0 ? (v.conversions / v.cartAdds) * 100 : 0 })).sort((a, b) => b.cartAdds - a.cartAdds) : [];
                         const hasVariants = variants.some(v => v.variantTitle !== null && v.variantTitle !== "Default Title");
                         return (
                           <>
@@ -1665,8 +1666,9 @@ export default function Index() {
                               <tr key={v.variantId} style={{ background: "#f9fafb", borderBottom: vi < variants.length - 1 ? "1px solid #f1f1f1" : (idx < sortedProducts.length - 1 ? "1px solid #e3e3e3" : "none") }}>
                                 <td style={{ padding: "8px 16px 8px 42px", fontSize: "12px", color: "#6d7175", maxWidth: "220px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v.variantTitle || "Default"}</td>
                                 <td style={{ padding: "8px 16px", fontSize: "12px", color: "#6d7175", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{v.cartAdds}</td>
-                                <td colSpan={2} style={{ padding: "8px 16px", fontSize: "12px", color: "#6d7175", textAlign: "right" }}></td>
-                                <td style={{ padding: "8px 16px", fontSize: "12px", color: "#6d7175", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{v.conversionRate.toFixed(1)}%</td>
+                                <td style={{ padding: "8px 16px", fontSize: "12px", color: "#6d7175", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{v.checkouts}</td>
+                                <td style={{ padding: "8px 16px", fontSize: "12px", color: "#6d7175", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{v.conversions}</td>
+                                <td style={{ padding: "8px 16px", fontSize: "12px", color: v.cartAdds > 0 ? "#008060" : "#919eab", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{v.conversionRate.toFixed(1)}%</td>
                               </tr>
                             ))}
                           </>
