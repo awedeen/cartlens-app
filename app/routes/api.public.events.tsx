@@ -96,6 +96,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     // Parse event payload
     const payload = await request.json();
+    // DEBUG: log UTM + visitorId from pixel payload
+    console.log("[CartLens DEBUG]", JSON.stringify({ vId: payload.visitorId, utmSrc: payload.utmSource, utmCam: payload.utmCampaign, lp: payload.landingPage?.slice(0,80), ip: cfIP, type: payload.eventType }));
     const {
       shopDomain,
       eventType,
