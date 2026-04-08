@@ -1,0 +1,44 @@
+# CartLens Dev - staging/testing app (NOT for App Store)
+# Points to: cartlens-app-staging.up.railway.app (dev branch)
+
+name = "CartLens Dev"
+client_id = "f41cc538e5ad6f4bb176624b6e6465a5"
+application_url = "https://cartlens-app-staging.up.railway.app"
+embedded = true
+
+[auth]
+redirect_urls = [ "https://cartlens-app-staging.up.railway.app/auth/callback" ]
+
+[access_scopes]
+scopes = "read_products,read_orders,write_pixels,read_customer_events"
+
+[webhooks]
+api_version = "2025-10"
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/uninstalled"
+  topics = ["app/uninstalled"]
+
+  [[webhooks.subscriptions]]
+  topics = ["app/scopes_update"]
+  uri = "/webhooks/app/scopes_update"
+
+  [[webhooks.subscriptions]]
+  topics = ["carts/create"]
+  uri = "/webhooks/carts"
+
+  [[webhooks.subscriptions]]
+  topics = ["carts/update"]
+  uri = "/webhooks/carts"
+
+  [[webhooks.subscriptions]]
+  topics = ["checkouts/create"]
+  uri = "/webhooks/checkouts"
+
+  [[webhooks.subscriptions]]
+  topics = ["checkouts/update"]
+  uri = "/webhooks/checkouts"
+
+  [[webhooks.subscriptions]]
+  topics = ["orders/create"]
+  uri = "/webhooks/orders"
