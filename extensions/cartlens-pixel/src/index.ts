@@ -31,39 +31,33 @@ register(({ analytics, browser, settings, init }) => {
     console.error("[CartLens Pixel] No app_url configured — events will not be sent");
   }
 
-  // In-memory UTM store — persists for the page session without needing browser.sessionStorage
-  // browser.sessionStorage.get is not available in the strict app pixel sandbox
-  const utmStore: {
-    utmSource: string | null;
-    utmMedium: string | null;
-    utmCampaign: string | null;
-    utmContent: string | null;
-    utmId: string | null;
-    landingPage: string | null;
-  } = {
-    utmSource: null, utmMedium: null, utmCampaign: null,
-    utmContent: null, utmId: null, landingPage: null,
-  };
+  // UTM helpers using browser.localStorage for cross-page persistence
+  // localStorage survives page navigation (unlike in-memory which dies on redirect-to-cart)
+  // Keys are prefixed with cl_ to avoid collisions
+  const ls = browser.localStorage;
+  const lsGet = (key: string): string | null => { try { return ls.getItem(`cl_${key}`); } catch { return null; } };
+  const lsSet = (key: string, val: string) => { try { ls.setItem(`cl_${key}`, val); } catch {} };
+  const lsHas = (key: string): boolean => lsGet(key) !== null;
 
-  // Capture UTMs from a URL and store in memory (first call wins)
+  // Capture UTMs from a URL and persist to localStorage (first call per session wins)
   const captureUtmsFromUrl = (urlOrSearch: string) => {
-    if (!urlOrSearch || utmStore.utmSource) return;
+    if (!urlOrSearch || lsHas("utmSource")) return;
     try {
       let search = urlOrSearch;
       if (urlOrSearch.includes("://") || urlOrSearch.startsWith("/")) {
         const u = urlOrSearch.startsWith("http") ? new URL(urlOrSearch) : new URL(urlOrSearch, "https://x.invalid");
         search = u.search;
-        if (!utmStore.landingPage) utmStore.landingPage = urlOrSearch.startsWith("http") ? urlOrSearch : u.toString();
+        if (!lsHas("landingPage")) lsSet("landingPage", urlOrSearch.startsWith("http") ? urlOrSearch : u.toString());
       }
       if (!search) return;
       const params = new URLSearchParams(search);
       const src = params.get("utm_source");
       if (src) {
-        utmStore.utmSource = src;
-        utmStore.utmMedium = params.get("utm_medium");
-        utmStore.utmCampaign = params.get("utm_campaign");
-        utmStore.utmContent = params.get("utm_content");
-        utmStore.utmId = params.get("utm_id") || params.get("fbclid");
+        lsSet("utmSource", src);
+        const med = params.get("utm_medium"); if (med) lsSet("utmMedium", med);
+        const cam = params.get("utm_campaign"); if (cam) lsSet("utmCampaign", cam);
+        const con = params.get("utm_content"); if (con) lsSet("utmContent", con);
+        const uid = params.get("utm_id") || params.get("fbclid"); if (uid) lsSet("utmId", uid);
       }
     } catch { /* ignore parse errors */ }
   };
@@ -83,13 +77,13 @@ register(({ analytics, browser, settings, init }) => {
       timestamp: new Date().toISOString(),
       deviceType,
       userAgent: browser.userAgent,
-      // Include UTMs + landing page from in-memory store (populated by first event with URL data)
-      utmSource: utmStore.utmSource,
-      utmMedium: utmStore.utmMedium,
-      utmCampaign: utmStore.utmCampaign,
-      utmContent: utmStore.utmContent,
-      utmId: utmStore.utmId,
-      landingPage: utmStore.landingPage,
+      // Include UTMs + landing page from localStorage (persists across page navigations)
+      utmSource: lsGet("utmSource"),
+      utmMedium: lsGet("utmMedium"),
+      utmCampaign: lsGet("utmCampaign"),
+      utmContent: lsGet("utmContent"),
+      utmId: lsGet("utmId"),
+      landingPage: lsGet("landingPage"),
       ...customerData,
       ...data,
     };
@@ -104,8 +98,9 @@ register(({ analytics, browser, settings, init }) => {
         },
         body: JSON.stringify(payload),
       });
-    } catch (error) {
-      // Silently fail — pixel events are best-effort
+    } catch (error: any) {
+      // Log fetch failures so we can debug via Pixel Helper console
+      console.error("[CartLens] fetch failed:", error?.message || error);
     }
   };
 
@@ -118,7 +113,7 @@ register(({ analytics, browser, settings, init }) => {
       || (init as any)?.context?.window?.location?.href
       || "";
     captureUtmsFromUrl(href);
-    if (!utmStore.landingPage && href) utmStore.landingPage = href;
+    if (!lsHas("landingPage") && href) lsSet("landingPage", href);
 
     sendEvent("cart_add", {
       product: {
@@ -164,7 +159,7 @@ register(({ analytics, browser, settings, init }) => {
     captureUtmsFromUrl(pageHref);
 
     // Store landing page if not already set
-    if (!utmStore.landingPage && pageHref) utmStore.landingPage = pageHref;
+    if (!lsHas("landingPage") && pageHref) lsSet("landingPage", pageHref);
 
     sendEvent("page_view", {
       pageUrl: href,
