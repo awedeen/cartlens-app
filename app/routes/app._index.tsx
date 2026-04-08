@@ -719,8 +719,6 @@ export default function Index() {
   const rOrders = filteredForReports.filter(s => s.orderPlaced).length;
   // rAvgCartValue removed — replaced by rRevenue
   const rConversionRate = rCarts > 0 ? (rOrders / rCarts) * 100 : 0;
-  const rCheckoutRate = rCarts > 0 ? (rCheckouts / rCarts) * 100 : 0;
-  const rCheckoutToOrderRate = rCheckouts > 0 ? (rOrders / rCheckouts) * 100 : 0;
   // Top products for selected range
   const rProductMap: Record<string, { title: string; cartAdds: number; checkouts: number; conversions: number }> = {};
   const rVariantMap: Record<string, Record<string, { variantTitle: string | null; cartAdds: number; checkouts: number; conversions: number }>> = {};
