@@ -1628,7 +1628,7 @@ export default function Index() {
                   return (
                     <th key={col} onClick={() => setProductSort(s => s.col === col ? { col, dir: s.dir === 'desc' ? 'asc' : 'desc' } : { col, dir: 'desc' })}
                       style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: active ? "#202223" : "#6d7175", textAlign: "right", whiteSpace: "nowrap", cursor: "pointer", userSelect: "none" }}>
-                      {label}{active ? (productSort.dir === 'desc' ? ' ↓' : ' ↑') : ''}
+                      {label}<span style={{opacity: active ? 1 : 0}}>{productSort.dir === 'desc' ? ' ↓' : ' ↑'}</span>
                     </th>
                   );
                 };
@@ -1706,7 +1706,7 @@ export default function Index() {
                   return (
                     <th key={col} onClick={() => setAbandonedSort(s => s.col === col ? { col, dir: s.dir === 'desc' ? 'asc' : 'desc' } : { col, dir: 'desc' })}
                       style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: active ? "#202223" : "#6d7175", textAlign: "right", whiteSpace: "nowrap", cursor: "pointer", userSelect: "none" }}>
-                      {label}{active ? (abandonedSort.dir === 'desc' ? ' ↓' : ' ↑') : ''}
+                      {label}<span style={{opacity: active ? 1 : 0}}>{abandonedSort.dir === 'desc' ? ' ↓' : ' ↑'}</span>
                     </th>
                   );
                 };
@@ -1765,7 +1765,7 @@ export default function Index() {
                     <th
                       onClick={() => setChannelSort(s => s.col === col ? { col, dir: s.dir === 'desc' ? 'asc' : 'desc' } : { col, dir: 'desc' })}
                       style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: active ? "#202223" : "#6d7175", textAlign: align, whiteSpace: "nowrap", cursor: "pointer", userSelect: "none" }}
-                    >{label}{active ? (channelSort.dir === 'desc' ? ' ↓' : ' ↑') : ''}</th>
+                    >{label}<span style={{opacity: active ? 1 : 0}}>{channelSort.dir === 'desc' ? ' ↓' : ' ↑'}</span></th>
                   );
                 };
                 return (
@@ -1823,7 +1823,7 @@ export default function Index() {
                     {(['cartAdds','orders','revenue','convRate'] as const).map(col => {
                       const labels: Record<string,string> = { cartAdds:'Cart adds', orders:'Orders', revenue:'Revenue', convRate:'Conv. rate' };
                       const active = campaignSort.col === col;
-                      return <th key={col} onClick={() => setCampaignSort(s => s.col===col ? {col,dir:s.dir==='desc'?'asc':'desc'} : {col,dir:'desc'})} style={{ padding:"8px 16px", fontSize:"12px", fontWeight:600, color:active?"#202223":"#6d7175", textAlign:"right", whiteSpace:"nowrap", cursor:"pointer", userSelect:"none" }}>{labels[col]}{active?(campaignSort.dir==='desc'?' ↓':' ↑'):''}</th>;
+                      return <th key={col} onClick={() => setCampaignSort(s => s.col===col ? {col,dir:s.dir==='desc'?'asc':'desc'} : {col,dir:'desc'})} style={{ padding:"8px 16px", fontSize:"12px", fontWeight:600, color:active?"#202223":"#6d7175", textAlign:"right", whiteSpace:"nowrap", cursor:"pointer", userSelect:"none" }}>{labels[col]}<span style={{opacity: active ? 1 : 0}}>{campaignSort.dir==='desc' ? ' ↓' : ' ↑'}</span></th>;
                     })}
                   </tr>
                 </thead>
@@ -1872,7 +1872,7 @@ export default function Index() {
                     {(['sessions','cartAdds','orders','convRate'] as const).map(col => {
                       const labels: Record<string,string> = { sessions:'Sessions', cartAdds:'Cart adds', orders:'Orders', convRate:'Conv. rate' };
                       const active = locationSort.col === col;
-                      return <th key={col} onClick={() => setLocationSort(s => s.col===col ? {col,dir:s.dir==='desc'?'asc':'desc'} : {col,dir:'desc'})} style={{ padding:"8px 16px", fontSize:"12px", fontWeight:600, color:active?"#202223":"#6d7175", textAlign:"right", whiteSpace:"nowrap", cursor:"pointer", userSelect:"none" }}>{labels[col]}{active?(locationSort.dir==='desc'?' ↓':' ↑'):''}</th>;
+                      return <th key={col} onClick={() => setLocationSort(s => s.col===col ? {col,dir:s.dir==='desc'?'asc':'desc'} : {col,dir:'desc'})} style={{ padding:"8px 16px", fontSize:"12px", fontWeight:600, color:active?"#202223":"#6d7175", textAlign:"right", whiteSpace:"nowrap", cursor:"pointer", userSelect:"none" }}>{labels[col]}<span style={{opacity: active ? 1 : 0}}>{locationSort.dir==='desc' ? ' ↓' : ' ↑'}</span></th>;
                     })}
                   </tr>
                 </thead>
