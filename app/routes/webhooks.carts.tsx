@@ -6,23 +6,6 @@ import { authenticate, unauthenticated } from "../shopify.server";
 import prisma from "../db.server";
 import sseManager from "../services/sse.server";
 
-// Webhook dedup — store processed webhook IDs for 10 minutes to handle Shopify retries
-// without recording duplicate cart_add/cart_remove events.
-const WEBHOOK_DEDUP_TTL_MS = 10 * 60 * 1000; // 10 minutes
-const processedWebhookIds = new Map<string, number>(); // webhookId -> timestamp
-
-function isDuplicateWebhook(webhookId: string | null): boolean {
-  if (!webhookId) return false;
-  const now = Date.now();
-  // Purge expired entries
-  for (const [id, ts] of processedWebhookIds.entries()) {
-    if (now - ts > WEBHOOK_DEDUP_TTL_MS) processedWebhookIds.delete(id);
-  }
-  if (processedWebhookIds.has(webhookId)) return true;
-  processedWebhookIds.set(webhookId, now);
-  return false;
-}
-
 // Cache product images to avoid repeated API calls — capped at 500 entries (LRU-lite: evict oldest on overflow)
 const IMAGE_CACHE_MAX = 500;
 const imageCache = new Map<string, string | null>();
@@ -59,12 +42,6 @@ async function getProductImage(shop: string, productId: string): Promise<string 
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   try {
-    const webhookId = request.headers.get("x-shopify-webhook-id");
-    if (isDuplicateWebhook(webhookId)) {
-      console.log(`[Webhook Carts] Duplicate webhook ${webhookId} — skipping`);
-      return data({ success: true }, { status: 200 });
-    }
-
     const { topic, shop, payload } = await authenticate.webhook(request);
 
     if (topic !== "CARTS_CREATE" && topic !== "CARTS_UPDATE") {

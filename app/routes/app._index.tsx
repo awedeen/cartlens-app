@@ -276,7 +276,6 @@ export default function Index() {
   const settingsFetcher = useFetcher();
   const [activeTab, setActiveTab] = useState<"live" | "reports" | "settings">("live");
   const [sessions, setSessions] = useState<SessionWithMeta[]>(data.sessions);
-  const [liveRange, setLiveRange] = useState<1 | 7 | 30>(1); // hours for 24h, days for 7d/30d
   const [selectedSession, setSelectedSession] = useState<SessionWithMeta | null>(null);
   const selectedSessionRef = useRef<SessionWithMeta | null>(null);
   useEffect(() => { selectedSessionRef.current = selectedSession; }, [selectedSession]);
@@ -340,12 +339,6 @@ export default function Index() {
     setHighValueThreshold(savedSettings.highValueThreshold);
   };
   const [reportRange, setReportRange] = useState<7 | 30 | 90>(30);
-  const [channelSort, setChannelSort] = useState<{ col: string; dir: 'desc' | 'asc' }>({ col: 'carts', dir: 'desc' });
-  const [campaignSort, setCampaignSort] = useState<{ col: string; dir: 'desc' | 'asc' }>({ col: 'cartAdds', dir: 'desc' });
-  const [productSort, setProductSort] = useState<{ col: string; dir: 'desc' | 'asc' }>({ col: 'cartAdds', dir: 'desc' });
-  const [locationSort, setLocationSort] = useState<{ col: string; dir: 'desc' | 'asc' }>({ col: 'sessions', dir: 'desc' });
-  const [abandonedSort, setAbandonedSort] = useState<{ col: string; dir: 'desc' | 'asc' }>({ col: 'abandonedCount', dir: 'desc' });
-  const [expandedProducts, setExpandedProducts] = useState<Set<string>>(new Set());
 
   // Connect to SSE for real-time updates
   useEffect(() => {
@@ -414,89 +407,6 @@ export default function Index() {
       eventSource.close();
     };
   }, [data.shopId]);
-
-  // Map UTM source+medium to a simplified channel label + color
-  const getTrafficChannel = (utmSource: string | null, utmMedium: string | null, utmId?: string | null): { label: string; color: string; bg: string } => {
-    const src = (utmSource || "").toLowerCase();
-    const med = (utmMedium || "").toLowerCase();
-
-    if (!src && !utmId) return { label: "Direct", color: "#6d7175", bg: "#f6f6f7" };
-
-    // fbclid with no UTMs = Meta ad click
-    if (!src && utmId?.startsWith("FB") || (!src && utmId?.length && utmId.length > 20))
-      return { label: "Paid Social", color: "#1877f2", bg: "#e7f0fd" };
-
-    const isPaidMed = ["cpc", "paid", "paid_social", "paidsocial"].includes(med);
-    const isSocialMed = ["paid_social", "paidsocial", "social"].includes(med);
-
-    // Facebook specifically
-    if ((src === "fb" || src === "facebook" || src.startsWith("fb.") || src.startsWith("facebook.")) && (isPaidMed || isSocialMed || med === ""))
-      return { label: "Facebook Ads", color: "#1877f2", bg: "#e7f0fd" };
-
-    // Instagram specifically
-    if ((src === "ig" || src === "instagram") && (isPaidMed || isSocialMed || med === ""))
-      return { label: "Instagram Ads", color: "#c13584", bg: "#fce8f3" };
-
-    // Meta Audience Network, Messenger, or generic meta
-    if ((src === "an" || src === "messenger" || src === "meta" || src.includes("meta")) && (isPaidMed || isSocialMed || med === ""))
-      return { label: "Meta Ads", color: "#1877f2", bg: "#e7f0fd" };
-
-    // TikTok paid (check before generic social)
-    if (src.includes("tiktok") && (isPaidMed || isSocialMed))
-      return { label: "TikTok Ads", color: "#010101", bg: "#f0f0f0" };
-
-    // TikTok organic
-    if (src.includes("tiktok"))
-      return { label: "TikTok", color: "#555", bg: "#f0f0f0" };
-
-    // Google Ads (gclid also signals this but we don't have it — check cpc)
-    if ((src.includes("google") || src.includes("adwords")) && (med === "cpc" || med === "ppc" || isPaidMed))
-      return { label: "Google Ads", color: "#34a853", bg: "#e6f4ea" };
-
-    // Organic search
-    if (["google", "bing", "yahoo", "duckduckgo", "baidu", "yandex"].some(s => src.includes(s)) || med === "organic")
-      return { label: "Organic Search", color: "#ea8600", bg: "#fff4e5" };
-
-    // Klaviyo / email platforms
-    if (src.includes("klaviyo") || src.includes("mailchimp") || src.includes("sendgrid") || src.includes("omnisend") || src.includes("drip") || src.includes("email") || src.includes("newsletter") || med === "email")
-      return { label: "Email", color: "#7c3aed", bg: "#f5f3ff" };
-
-    // SMS platforms
-    if (src.includes("sms") || med === "sms" || src.includes("attentive") || src.includes("postscript") || src.includes("klaviyo_sms"))
-      return { label: "SMS", color: "#059669", bg: "#ecfdf5" };
-
-    // Pinterest
-    if (src.includes("pinterest") && isPaidMed)
-      return { label: "Pinterest Ads", color: "#e60023", bg: "#fff0f1" };
-    if (src.includes("pinterest"))
-      return { label: "Pinterest", color: "#e60023", bg: "#fff0f1" };
-
-    // Snapchat
-    if (src.includes("snapchat"))
-      return { label: "Snapchat", color: "#fffc00", bg: "#fffee0" };
-
-    // YouTube
-    if (src.includes("youtube") && isPaidMed)
-      return { label: "YouTube Ads", color: "#ff0000", bg: "#fff0f0" };
-    if (src.includes("youtube"))
-      return { label: "YouTube", color: "#ff0000", bg: "#fff0f0" };
-
-    // Organic social (other platforms)
-    if (["twitter", "x.com", "linkedin", "reddit"].some(s => src.includes(s)))
-      return { label: "Organic Social", color: "#8b5cf6", bg: "#f3f0ff" };
-
-    // Affiliate / influencer
-    if (med === "affiliate" || med === "influencer" || src.includes("affiliate") || src.includes("impact") || src.includes("shareasale"))
-      return { label: "Affiliate", color: "#b45309", bg: "#fffbeb" };
-
-    // Generic paid
-    if (isPaidMed)
-      return { label: "Paid", color: "#0070f3", bg: "#e6f0fd" };
-
-    // Fallback — show source name capitalized
-    const display = utmSource ? utmSource.charAt(0).toUpperCase() + utmSource.slice(1) : "Unknown";
-    return { label: display, color: "#6d7175", bg: "#f6f6f7" };
-  };
 
   const formatTimeAgo = (date: string) => {
     const now = new Date();
@@ -717,11 +627,14 @@ export default function Index() {
   const rCarts = filteredForReports.filter(s => s.cartCreated).length;
   const rCheckouts = filteredForReports.filter(s => s.checkoutStarted).length;
   const rOrders = filteredForReports.filter(s => s.orderPlaced).length;
-  // rAvgCartValue removed — replaced by rRevenue
+  const rAvgCartValue = rCarts > 0
+    ? filteredForReports.filter(s => s.cartCreated).reduce((sum, s) => sum + s.cartTotal, 0) / rCarts
+    : 0;
   const rConversionRate = rCarts > 0 ? (rOrders / rCarts) * 100 : 0;
+  const rCheckoutRate = rCarts > 0 ? (rCheckouts / rCarts) * 100 : 0;
+  const rCheckoutToOrderRate = rCheckouts > 0 ? (rOrders / rCheckouts) * 100 : 0;
   // Top products for selected range
   const rProductMap: Record<string, { title: string; cartAdds: number; checkouts: number; conversions: number }> = {};
-  const rVariantMap: Record<string, Record<string, { variantTitle: string | null; cartAdds: number; checkouts: number; conversions: number }>> = {};
   for (const s of filteredForReports) {
     const evts = s.events || [];
     for (const e of evts.filter((e: any) => e.eventType === "cart_add")) {
@@ -729,13 +642,6 @@ export default function Index() {
       if (!rProductMap[key]) rProductMap[key] = { title: e.productTitle || "Unknown", cartAdds: 0, checkouts: 0, conversions: 0 };
       rProductMap[key].cartAdds += 1;
       if (s.orderPlaced) rProductMap[key].conversions += 1;
-      // variant tracking
-      const variantKey = e.variantId || "default";
-      if (!rVariantMap[key]) rVariantMap[key] = {};
-      if (!rVariantMap[key][variantKey]) rVariantMap[key][variantKey] = { variantTitle: e.variantTitle || null, cartAdds: 0, checkouts: 0, conversions: 0 };
-      rVariantMap[key][variantKey].cartAdds += 1;
-      if (s.checkoutStarted) rVariantMap[key][variantKey].checkouts += 1;
-      if (s.orderPlaced) rVariantMap[key][variantKey].conversions += 1;
     }
     const ciProductIds = new Set(evts.filter((e: any) => e.eventType === "checkout_item").map((e: any) => e.productId).filter(Boolean));
     for (const pid of ciProductIds) {
@@ -749,87 +655,19 @@ export default function Index() {
     .sort((a, b) => b.cartAdds - a.cartAdds)
     .slice(0, 10);
 
-  // Top abandoned products (sessions that didn't convert)
-  const rAbandonedMap: Record<string, { title: string; cartAdds: number; abandonedCount: number }> = {};
+  // Top referrers for selected range — computed client-side so the toggle affects this too
+  const rReferrerMap: Record<string, { sessions: number; cartAdds: number; conversions: number }> = {};
   for (const s of filteredForReports) {
-    if (s.orderPlaced) continue; // only sessions that didn't convert
-    const evts = s.events || [];
-    for (const e of evts.filter((e: any) => e.eventType === "cart_add")) {
-      const key = e.productId || "unknown";
-      if (!rAbandonedMap[key]) rAbandonedMap[key] = { title: e.productTitle || "Unknown", cartAdds: 0, abandonedCount: 0 };
-      rAbandonedMap[key].cartAdds += 1;
-      rAbandonedMap[key].abandonedCount += 1;
-    }
+    const referrer = s.referrerUrl || "Direct";
+    if (!rReferrerMap[referrer]) rReferrerMap[referrer] = { sessions: 0, cartAdds: 0, conversions: 0 };
+    rReferrerMap[referrer].sessions += 1;
+    if (s.cartCreated) rReferrerMap[referrer].cartAdds += 1;
+    if (s.orderPlaced) rReferrerMap[referrer].conversions += 1;
   }
-  const rTopAbandoned = Object.entries(rAbandonedMap)
-    .map(([productId, d]) => ({ productId, productTitle: d.title, cartAdds: d.cartAdds, abandonedCount: d.abandonedCount }))
-    .sort((a, b) => b.abandonedCount - a.abandonedCount)
-    .slice(0, 10);
-  const hasAbandonedData = rTopAbandoned.length > 0;
-
-  const rRevenue = filteredForReports.filter(s => s.orderPlaced).reduce((sum, s) => sum + (s.orderValue || 0), 0);
-
-  // UTM source/medium breakdown for selected range
-  const rUtmMap: Record<string, { utmSource: string | null; utmMedium: string | null; sessions: number; cartAdds: number; orders: number }> = {};
-  for (const s of filteredForReports) {
-    const key = s.utmSource
-      ? (s.utmMedium ? `${s.utmSource}||${s.utmMedium}` : s.utmSource)
-      : "__direct__";
-    if (!rUtmMap[key]) rUtmMap[key] = { utmSource: s.utmSource, utmMedium: s.utmMedium, sessions: 0, cartAdds: 0, orders: 0 };
-    rUtmMap[key].sessions += 1;
-    if (s.cartCreated) rUtmMap[key].cartAdds += 1;
-    if (s.orderPlaced) rUtmMap[key].orders += 1;
-  }
-  const rUtmBreakdown = Object.entries(rUtmMap)
-    .map(([, d]) => ({ utmSource: d.utmSource, utmMedium: d.utmMedium, sessions: d.sessions, cartAdds: d.cartAdds, orders: d.orders, convRate: d.cartAdds > 0 ? (d.orders / d.cartAdds) * 100 : 0 }))
+  const rTopReferrers = Object.entries(rReferrerMap)
+    .map(([referrer, d]) => ({ referrer, sessions: d.sessions, cartAdds: d.cartAdds, conversionRate: d.cartAdds > 0 ? (d.conversions / d.cartAdds) * 100 : 0 }))
     .sort((a, b) => b.sessions - a.sessions)
     .slice(0, 10);
-  const hasUtmData = filteredForReports.some(s => s.utmSource);
-
-  // Top campaigns breakdown (by utm_campaign)
-  const rCampaignMap: Record<string, { utmSource: string | null; utmMedium: string | null; sessions: number; cartAdds: number; orders: number; revenue: number }> = {};
-  for (const s of filteredForReports) {
-    if (!s.utmCampaign) continue;
-    const key = s.utmCampaign;
-    if (!rCampaignMap[key]) rCampaignMap[key] = { utmSource: s.utmSource, utmMedium: s.utmMedium, sessions: 0, cartAdds: 0, orders: 0, revenue: 0 };
-    rCampaignMap[key].sessions += 1;
-    if (s.cartCreated) rCampaignMap[key].cartAdds += 1;
-    if (s.orderPlaced) { rCampaignMap[key].orders += 1; rCampaignMap[key].revenue += s.orderValue || 0; }
-  }
-  const rTopCampaigns = Object.entries(rCampaignMap)
-    .map(([campaign, d]) => ({ campaign, utmSource: d.utmSource, utmMedium: d.utmMedium, sessions: d.sessions, cartAdds: d.cartAdds, orders: d.orders, revenue: d.revenue, convRate: d.cartAdds > 0 ? (d.orders / d.cartAdds) * 100 : 0 }))
-    .sort((a, b) => b.cartAdds - a.cartAdds)
-    .slice(0, 10);
-  const hasCampaignData = rTopCampaigns.length > 0;
-
-  // Per-channel attribution funnel
-  const rChannelMap: Record<string, { label: string; color: string; bg: string; carts: number; checkouts: number; orders: number }> = {};
-  for (const s of filteredForReports) {
-    const ch = getTrafficChannel(s.utmSource, s.utmMedium, s.utmId);
-    if (!rChannelMap[ch.label]) rChannelMap[ch.label] = { label: ch.label, color: ch.color, bg: ch.bg, carts: 0, checkouts: 0, orders: 0 };
-    if (s.cartCreated) rChannelMap[ch.label].carts += 1;
-    if (s.checkoutStarted) rChannelMap[ch.label].checkouts += 1;
-    if (s.orderPlaced) rChannelMap[ch.label].orders += 1;
-  }
-  const rChannelFunnel = Object.values(rChannelMap)
-    .filter(c => c.carts > 0)
-    .sort((a, b) => b.carts - a.carts)
-    .slice(0, 8);
-
-  // Top locations breakdown for selected range
-  const rGeoMap: Record<string, { sessions: number; cartAdds: number; orders: number }> = {};
-  for (const s of filteredForReports) {
-    const loc = s.city && s.countryCode ? `${s.city}, ${s.countryCode}` : s.countryCode || "Unknown";
-    if (!rGeoMap[loc]) rGeoMap[loc] = { sessions: 0, cartAdds: 0, orders: 0 };
-    rGeoMap[loc].sessions += 1;
-    if (s.cartCreated) rGeoMap[loc].cartAdds += 1;
-    if (s.orderPlaced) rGeoMap[loc].orders += 1;
-  }
-  const rTopLocations = Object.entries(rGeoMap)
-    .map(([location, d]) => ({ location, sessions: d.sessions, cartAdds: d.cartAdds, orders: d.orders, convRate: d.cartAdds > 0 ? (d.orders / d.cartAdds) * 100 : 0 }))
-    .sort((a, b) => b.sessions - a.sessions)
-    .slice(0, 10);
-  const hasGeoData = rTopLocations.some(l => l.location !== "Unknown");
 
   return (
     // @ts-ignore -- App Bridge s-page type definition omits `title` but it works at runtime
@@ -994,7 +832,7 @@ export default function Index() {
                   <div>
                     <div style={{ fontSize: "12px", color: "#6d7175", marginBottom: "4px" }}>Device</div>
                     <div style={{ fontSize: "14px", color: "#202223" }}>
-                      {selectedSession.deviceType || "Unknown"} • {selectedSession.browser || "Unknown"}{(selectedSession as any).deviceModel ? ` • ${(selectedSession as any).deviceModel}` : ""}
+                      {selectedSession.deviceType || "Unknown"} • {selectedSession.browser || "Unknown"}
                     </div>
                   </div>
                   {selectedSession.customerEmail && (
@@ -1013,48 +851,12 @@ export default function Index() {
                       </div>
                     </div>
                   )}
-                  {(selectedSession.landingPage || selectedSession.utmSource || selectedSession.utmMedium || selectedSession.utmCampaign) && (
-                    <div style={{ gridColumn: "1 / -1" }}>
-                      <div style={{ fontSize: "12px", color: "#6d7175", marginBottom: "8px" }}>Traffic</div>
-                      {/* Channel badge */}
-                      {(selectedSession.utmSource || selectedSession.utmId) && (() => {
-                        const ch = getTrafficChannel(selectedSession.utmSource, selectedSession.utmMedium, selectedSession.utmId);
-                        return (
-                          <div style={{ marginBottom: "10px", display: "flex", flexWrap: "wrap", alignItems: "center", gap: "8px" }}>
-                            <span style={{ fontSize: "12px", fontWeight: 600, color: ch.color, background: ch.bg, padding: "3px 10px", borderRadius: "4px" }}>
-                              {ch.label}
-                            </span>
-                            {selectedSession.utmCampaign && (
-                              <span style={{ fontSize: "12px", color: "#202223", fontWeight: 500 }}>
-                                {selectedSession.utmCampaign}
-                              </span>
-                            )}
-                            {selectedSession.utmContent && (
-                              <span style={{ fontSize: "12px", color: "#6d7175" }}>
-                                · {selectedSession.utmContent}
-                              </span>
-                            )}
-                          </div>
-                        );
-                      })()}
-                      {/* Full landing URL with UTMs */}
-                      {selectedSession.landingPage && (
-                        <div style={{
-                          fontSize: "11px",
-                          fontFamily: "monospace",
-                          color: "#6d7175",
-                          background: "#f6f6f7",
-                          border: "1px solid #e3e3e3",
-                          borderRadius: "4px",
-                          padding: "8px 10px",
-                          wordBreak: "break-all",
-                          lineHeight: "1.5",
-                          userSelect: "all",
-                          cursor: "text"
-                        }}>
-                          {selectedSession.landingPage}
-                        </div>
-                      )}
+                  {selectedSession.landingPage && (
+                    <div>
+                      <div style={{ fontSize: "12px", color: "#6d7175", marginBottom: "4px" }}>Landing Page</div>
+                      <div style={{ fontSize: "14px", color: "#202223", wordBreak: "break-all" }}>
+                        {selectedSession.landingPage}
+                      </div>
                     </div>
                   )}
                   <div>
@@ -1201,28 +1003,21 @@ export default function Index() {
           ) : (
             /* List View */
             <div>
-              {(() => { const _rangeCutoff = new Date(); if (liveRange === 1) _rangeCutoff.setHours(_rangeCutoff.getHours()-24); else _rangeCutoff.setDate(_rangeCutoff.getDate()-liveRange); return null; })()}
-              {/* Time filter header */}
-              <div style={{ marginBottom: "16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <h2 style={{ fontSize: "16px", fontWeight: 600, color: "#202223" }}>Recent Cart Activity</h2>
-                  <span style={{ background: "#f6f6f7", color: "#6d7175", fontSize: "12px", padding: "2px 8px", borderRadius: "4px", fontWeight: 600 }}>
-                    {sessions.filter(s => { const c = new Date(); if (liveRange===1) c.setHours(c.getHours()-24); else c.setDate(c.getDate()-liveRange); return new Date(s.updatedAt)>=c; }).length}
-                  </span>
-                </div>
-                <div style={{ display: "flex", border: "1px solid #e3e3e3", borderRadius: "6px", overflow: "hidden" }}>
-                  {([{v:1,l:"24h"},{v:7,l:"7d"},{v:30,l:"30d"}] as {v:1|7|30,l:string}[]).map(({v,l}) => (
-                    <button key={v} onClick={() => setLiveRange(v)} style={{
-                      padding: "5px 12px", fontSize: "12px", fontWeight: liveRange===v ? 600 : 400,
-                      color: liveRange===v ? "#ffffff" : "#6d7175",
-                      background: liveRange===v ? "#008060" : "#ffffff",
-                      border: "none", borderRight: v!==30 ? "1px solid #e3e3e3" : "none", cursor: "pointer"
-                    }}>{l}</button>
-                  ))}
-                </div>
+              <div style={{ marginBottom: "16px", display: "flex", alignItems: "center", gap: "8px" }}>
+                <h2 style={{ fontSize: "16px", fontWeight: 600, color: "#202223" }}>Recent Cart Activity</h2>
+                <span style={{
+                  background: "#f6f6f7",
+                  color: "#6d7175",
+                  fontSize: "12px",
+                  padding: "2px 8px",
+                  borderRadius: "4px",
+                  fontWeight: 600
+                }}>
+                  {sessions.length}
+                </span>
               </div>
 
-              {sessions.filter(s => { const c = new Date(); if (liveRange===1) c.setHours(c.getHours()-24); else c.setDate(c.getDate()-liveRange); return new Date(s.updatedAt)>=c; }).length === 0 ? (
+              {sessions.length === 0 ? (
                 <div style={{
                   background: "#ffffff",
                   border: "1px solid #e3e3e3",
@@ -1310,7 +1105,7 @@ export default function Index() {
                 </div>
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                  {sessions.filter(s => { const c = new Date(); if (liveRange===1) c.setHours(c.getHours()-24); else c.setDate(c.getDate()-liveRange); return new Date(s.updatedAt)>=c; }).slice(0, 50).map((session) => {
+                  {sessions.slice(0, 50).map((session) => {
                     const status = getStatusBadge(session);
                     const products = session.events
                       ?.filter((e) => e.eventType === "cart_add")
@@ -1324,30 +1119,26 @@ export default function Index() {
                       .slice(0, 4);
 
                     const isFlashing = flashIds.has(session.id);
-                    const isConverted = session.orderPlaced;
-                    const isCheckout = session.checkoutStarted && !session.orderPlaced;
-                    const cardBg = isFlashing ? "#fffbef" : isConverted ? "#f6fdf9" : "#ffffff";
-                    const cardBorder = isConverted ? "1px solid #95c9b4" : isCheckout ? "1px solid #ffd880" : "1px solid #e3e3e3";
-                    const cardBorderLeft = isConverted ? "3px solid #008060" : isCheckout ? "3px solid #ffc453" : "1px solid #e3e3e3";
                     return (
                       <div
                         key={session.id}
                         onClick={() => setSelectedSession(session)}
                         style={{
-                          background: cardBg,
-                          border: cardBorder,
-                          borderLeft: cardBorderLeft,
+                          background: isFlashing ? "#fffbef" : "#ffffff",
+                          border: "1px solid #e3e3e3",
                           borderRadius: "8px",
                           padding: "16px",
                           cursor: "pointer",
                           transition: isFlashing ? "none" : "background-color 0.7s ease, box-shadow 0.2s",
-                          boxShadow: isConverted ? "0 1px 3px rgba(0,128,96,0.12)" : "0 1px 2px rgba(0,0,0,0.05)"
+                          boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
                         }}
                         onMouseEnter={(e) => {
-                          e.currentTarget.style.boxShadow = "0 2px 6px rgba(0,0,0,0.1)";
+                          e.currentTarget.style.background = "#f6f6f7";
+                          e.currentTarget.style.boxShadow = "0 2px 4px rgba(0,0,0,0.1)";
                         }}
                         onMouseLeave={(e) => {
-                          e.currentTarget.style.boxShadow = isConverted ? "0 1px 3px rgba(0,128,96,0.12)" : "0 1px 2px rgba(0,0,0,0.05)";
+                          e.currentTarget.style.background = "#ffffff";
+                          e.currentTarget.style.boxShadow = "0 1px 2px rgba(0,0,0,0.05)";
                         }}
                       >
                         {/* Card Header */}
@@ -1443,40 +1234,11 @@ export default function Index() {
                             } catch { return null; }
                           })()}
                         </div>
-                        <div style={{ fontSize: "12px", color: "#919eab", marginBottom: (session.city || session.utmSource || session.referrerUrl) ? "6px" : "10px", display: "flex", alignItems: "center", gap: "8px" }}>
-                          <span>Created {new Date(session.createdAt.toString()).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: displayTimezone })}</span>
-                          {(session.city || session.countryCode) && (
-                            <span style={{ display: "flex", alignItems: "center", gap: "3px" }}>
-                              <span style={{ color: "#b0b7bf" }}>·</span>
-                              <span>{[session.city, session.countryCode].filter(Boolean).join(", ")}</span>
-                            </span>
-                          )}
+                        <div style={{ fontSize: "12px", color: "#919eab", marginBottom: "10px" }}>
+                          Created {new Date(session.createdAt.toString()).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: displayTimezone })}
                         </div>
-
-                        {(session.utmSource || session.referrerUrl) && (() => {
-                          const channel = getTrafficChannel(session.utmSource, session.utmMedium, session.utmId);
-                          return (
-                            <div style={{ marginBottom: "10px" }}>
-                              <span style={{
-                                display: "inline-block",
-                                fontSize: "11px",
-                                fontWeight: 600,
-                                color: channel.color,
-                                background: channel.bg,
-                                padding: "2px 8px",
-                                borderRadius: "4px",
-                                letterSpacing: "0.2px"
-                              }}>
-                                {channel.label}
-                              </span>
-                            </div>
-                          );
-                        })()}
 
                         <CollapsibleProducts session={session} />
-                        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "8px" }}>
-                          <span style={{ fontSize: "12px", color: "#008060", fontWeight: 500 }}>View details →</span>
-                        </div>
                       </div>
                     );
                   })}
@@ -1490,46 +1252,11 @@ export default function Index() {
       {/* Reports Tab */}
       {activeTab === "reports" && (
         <div style={{ overflow: "hidden" }}>
-          {/* Date Range Toggle + Export */}
+          {/* Date Range Toggle */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <button
-                onClick={async () => {
-                  try {
-                    const startDate = new Date();
-                    startDate.setDate(startDate.getDate() - reportRange);
-                    const res = await fetch(`/app/api/export?startDate=${startDate.toISOString()}`);
-                    if (!res.ok) throw new Error("Export failed");
-                    const blob = await res.blob();
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement("a");
-                    a.href = url;
-                    a.download = `cartlens-export-${new Date().toISOString().split("T")[0]}.csv`;
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    URL.revokeObjectURL(url);
-                  } catch (e) {
-                    alert("Export failed. Please try again.");
-                  }
-                }}
-                style={{
-                  background: "#ffffff",
-                  color: "#202223",
-                  border: "1px solid #e3e3e3",
-                  borderRadius: "4px",
-                  padding: "6px 12px",
-                  fontSize: "13px",
-                  fontWeight: 500,
-                  cursor: "pointer"
-                }}
-              >
-                Export CSV
-              </button>
-              <span style={{ fontSize: "12px", color: "#9ca3af" }}>
-                Based on {sessions.length} most recent session{sessions.length !== 1 ? "s" : ""}
-              </span>
-            </div>
+            <span style={{ fontSize: "12px", color: "#9ca3af" }}>
+              Based on {sessions.length} most recent session{sessions.length !== 1 ? "s" : ""}
+            </span>
             <div style={{ display: "flex", border: "1px solid #e3e3e3", borderRadius: "6px", overflow: "hidden" }}>
               {([7, 30, 90] as const).map((r) => (
                 <button
@@ -1552,13 +1279,6 @@ export default function Index() {
             </div>
           </div>
 
-          {filteredForReports.length === 0 && (
-            <div style={{ textAlign: "center", padding: "40px 16px", color: "#6d7175" }}>
-              <div style={{ fontSize: "16px", fontWeight: 600, color: "#202223", marginBottom: "8px" }}>No data for this period</div>
-              <div style={{ fontSize: "14px" }}>Try expanding the date range above</div>
-            </div>
-          )}
-
           {/* Summary Cards */}
           <div style={{
             display: "grid",
@@ -1569,7 +1289,7 @@ export default function Index() {
             {[
               { label: "Total Carts", value: rCarts, color: "#202223" },
               { label: "Conversion Rate", value: `${rConversionRate.toFixed(1)}%`, color: "#008060" },
-              { label: "Revenue", value: rRevenue.toLocaleString('en-US', {style:'currency',currency:'USD',maximumFractionDigits:0}), color: "#202223" },
+              { label: "Avg Cart Value", value: `$${rAvgCartValue.toFixed(2)}`, color: "#202223" },
               { label: "Total Orders", value: rOrders, color: "#008060" }
             ].map((stat, idx) => (
               <div
@@ -1592,7 +1312,58 @@ export default function Index() {
             ))}
           </div>
 
-
+          {/* Funnel */}
+          <div style={{
+            background: "#ffffff",
+            border: "1px solid #e3e3e3",
+            borderRadius: "8px",
+            padding: "16px",
+            marginBottom: "20px",
+            boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
+          }}>
+            <h3 style={{ fontSize: "15px", fontWeight: 600, color: "#202223", marginBottom: "14px" }}>
+              Funnel — Last {reportRange} Days
+            </h3>
+            <div style={{ marginBottom: "8px", fontSize: "13px", color: "#6d7175" }}>
+              {rCarts} carts total
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+              {[
+                {
+                  label: "Checkout Started",
+                  value: rCheckouts,
+                  total: rCarts,
+                  barPercent: rCheckoutRate,
+                  color: "#ffc453"
+                },
+                {
+                  label: "Order Placed",
+                  value: rOrders,
+                  total: rCarts,
+                  barPercent: rConversionRate,
+                  color: "#5C6AC4"
+                }
+              ].map((stage, idx) => (
+                <div key={idx}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
+                    <span style={{ fontSize: "13px", color: "#202223" }}>{stage.label}</span>
+                    <span style={{ fontSize: "13px", color: "#6d7175" }}>
+                      {stage.value} of {stage.total}
+                      <span style={{ color: "#adb0b3", fontSize: "12px" }}> · {stage.barPercent.toFixed(1)}%</span>
+                    </span>
+                  </div>
+                  <div style={{ width: "100%", height: "8px", background: "#e3e3e3", borderRadius: "4px", overflow: "hidden" }}>
+                    <div style={{
+                      width: `${stage.barPercent}%`,
+                      height: "100%",
+                      background: stage.color,
+                      transition: "width 0.3s"
+                    }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
 
           {/* Top Products */}
           <div style={{
@@ -1612,285 +1383,91 @@ export default function Index() {
               <div style={{ fontSize: "14px", color: "#6d7175", padding: "20px 16px", textAlign: "center" }}>
                 No product data yet
               </div>
-            ) : (() => {
-                const sortedProducts = [...rTopProducts].sort((a, b) => {
-                  const mult = productSort.dir === 'desc' ? -1 : 1;
-                  const col = productSort.col as keyof typeof a;
-                  return mult * ((a[col] as number) - (b[col] as number));
-                });
-                const mkTh = (label: string, col: string) => {
-                  const active = productSort.col === col;
-                  return (
-                    <th key={col} onClick={() => setProductSort(s => s.col === col ? { col, dir: s.dir === 'desc' ? 'asc' : 'desc' } : { col, dir: 'desc' })}
-                      style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: active ? "#202223" : "#6d7175", textAlign: "right", whiteSpace: "nowrap", cursor: "pointer", userSelect: "none" }}>
-                      {label}<span style={{opacity: active ? 1 : 0}}>{productSort.dir === 'desc' ? ' ↓' : ' ↑'}</span>
-                    </th>
-                  );
-                };
-                return (
-                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                    <thead>
-                      <tr style={{ borderTop: "1px solid #e3e3e3", borderBottom: "1px solid #e3e3e3" }}>
-                        <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "left" }}>Product</th>
-                        {mkTh("Cart adds", "cartAdds")}
-                        {mkTh("Checkouts", "checkouts")}
-                        {mkTh("Orders", "conversions")}
-                        {mkTh("Conv. rate", "conversionRate")}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {sortedProducts.map((product, idx) => {
-                        const isExpanded = expandedProducts.has(product.productId);
-                        const variants = rVariantMap[product.productId] ? Object.entries(rVariantMap[product.productId]).map(([vid, v]) => ({ variantId: vid, variantTitle: v.variantTitle, cartAdds: v.cartAdds, checkouts: v.checkouts, conversions: v.conversions, conversionRate: v.cartAdds > 0 ? (v.conversions / v.cartAdds) * 100 : 0 })).sort((a, b) => b.cartAdds - a.cartAdds) : [];
-                        const hasVariants = variants.some(v => v.variantTitle !== null && v.variantTitle !== "Default Title");
-                        return (
-                          <>
-                            <tr key={product.productId} style={{ borderBottom: isExpanded ? "none" : (idx < sortedProducts.length - 1 ? "1px solid #f1f1f1" : "none") }}>
-                              <td style={{ padding: "10px 16px", fontSize: "13px", fontWeight: 500, color: "#202223", maxWidth: "220px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                {hasVariants && (
-                                  <button onClick={() => setExpandedProducts(prev => { const next = new Set(prev); if (next.has(product.productId)) { next.delete(product.productId); } else { next.add(product.productId); } return next; })} style={{ background: "none", border: "1px solid #c4cdd5", borderRadius: "3px", cursor: "pointer", fontSize: "11px", fontWeight: 700, color: "#6d7175", width: "18px", height: "18px", lineHeight: 1, padding: 0, marginRight: "8px", verticalAlign: "middle" }}>{isExpanded ? "−" : "+"}</button>
-                                )}
-                                {product.productTitle}
-                              </td>
-                              <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{product.cartAdds}</td>
-                              <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{product.checkouts}</td>
-                              <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{product.conversions}</td>
-                              <td style={{ padding: "10px 16px", fontSize: "13px", color: "#008060", textAlign: "right", fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>{product.conversionRate.toFixed(1)}%</td>
-                            </tr>
-                            {isExpanded && variants.map((v, vi) => (
-                              <tr key={v.variantId} style={{ background: "#f9fafb", borderBottom: vi < variants.length - 1 ? "1px solid #f1f1f1" : (idx < sortedProducts.length - 1 ? "1px solid #e3e3e3" : "none") }}>
-                                <td style={{ padding: "8px 16px 8px 42px", fontSize: "12px", color: "#6d7175", maxWidth: "220px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v.variantTitle || "Default"}</td>
-                                <td style={{ padding: "8px 16px", fontSize: "12px", color: "#6d7175", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{v.cartAdds}</td>
-                                <td style={{ padding: "8px 16px", fontSize: "12px", color: "#6d7175", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{v.checkouts}</td>
-                                <td style={{ padding: "8px 16px", fontSize: "12px", color: "#6d7175", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{v.conversions}</td>
-                                <td style={{ padding: "8px 16px", fontSize: "12px", color: v.cartAdds > 0 ? "#008060" : "#919eab", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{v.conversionRate.toFixed(1)}%</td>
-                              </tr>
-                            ))}
-                          </>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                );
-              })()}
-          </div>
-
-
-
-          {/* Top Abandoned Products */}
-          {hasAbandonedData && (
-            <div style={{
-              background: "#ffffff",
-              border: "1px solid #e3e3e3",
-              borderRadius: "8px",
-              overflowX: "auto",
-              marginBottom: "20px",
-              boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
-            }}>
-              <div style={{ padding: "16px 16px 12px" }}>
-                <h3 style={{ fontSize: "15px", fontWeight: 600, color: "#202223", margin: 0 }}>Top Abandoned Products</h3>
-              </div>
-              {(() => {
-                const sortedAbandoned = [...rTopAbandoned].sort((a, b) => {
-                  const mult = abandonedSort.dir === 'desc' ? -1 : 1;
-                  const col = abandonedSort.col as keyof typeof a;
-                  return mult * ((a[col] as number) - (b[col] as number));
-                });
-                const mkAbTh = (label: string, col: string) => {
-                  const active = abandonedSort.col === col;
-                  return (
-                    <th key={col} onClick={() => setAbandonedSort(s => s.col === col ? { col, dir: s.dir === 'desc' ? 'asc' : 'desc' } : { col, dir: 'desc' })}
-                      style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: active ? "#202223" : "#6d7175", textAlign: "right", whiteSpace: "nowrap", cursor: "pointer", userSelect: "none" }}>
-                      {label}<span style={{opacity: active ? 1 : 0}}>{abandonedSort.dir === 'desc' ? ' ↓' : ' ↑'}</span>
-                    </th>
-                  );
-                };
-                return (
-                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                    <thead>
-                      <tr style={{ borderTop: "1px solid #e3e3e3", borderBottom: "1px solid #e3e3e3" }}>
-                        <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "left" }}>Product</th>
-                        {mkAbTh("Cart adds", "cartAdds")}
-                        {mkAbTh("Abandoned", "abandonedCount")}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {sortedAbandoned.map((product, idx) => (
-                        <tr key={product.productId} style={{ borderBottom: idx < sortedAbandoned.length - 1 ? "1px solid #f1f1f1" : "none" }}>
-                          <td style={{ padding: "10px 16px", fontSize: "13px", fontWeight: 500, color: "#202223", maxWidth: "200px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{product.productTitle}</td>
-                          <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{product.cartAdds}</td>
-                          <td style={{ padding: "10px 16px", fontSize: "13px", color: "#c9242f", textAlign: "right", fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>{product.abandonedCount}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                );
-              })()}
-            </div>
-          )}
-
-          {/* Channel Performance — unified table replacing Traffic Sources + Funnel */}
-          {rChannelFunnel.length > 0 && (
-            <div style={{
-              background: "#ffffff",
-              border: "1px solid #e3e3e3",
-              borderRadius: "8px",
-              overflowX: "auto",
-              marginBottom: "20px",
-              boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
-            }}>
-              <div style={{ padding: "16px 16px 12px", display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                <h3 style={{ fontSize: "15px", fontWeight: 600, color: "#202223", margin: 0 }}>Channel Performance</h3>
-                <span style={{ fontSize: "12px", color: "#919eab" }}>by traffic source</span>
-              </div>
-              {(() => {
-                const sortedChannels = [...rChannelFunnel].sort((a, b) => {
-                  const mult = channelSort.dir === 'desc' ? -1 : 1;
-                  if (channelSort.col === 'convRate') {
-                    const aRate = a.carts > 0 ? a.orders / a.carts : 0;
-                    const bRate = b.carts > 0 ? b.orders / b.carts : 0;
-                    return mult * (aRate - bRate);
-                  }
-                  const col = channelSort.col as keyof typeof a;
-                  return mult * ((a[col] as number) - (b[col] as number));
-                });
-                const mkChannelTh = (label: string, col: string, align: 'left' | 'right' = 'right') => {
-                  const active = channelSort.col === col;
-                  return (
-                    <th
-                      onClick={() => setChannelSort(s => s.col === col ? { col, dir: s.dir === 'desc' ? 'asc' : 'desc' } : { col, dir: 'desc' })}
-                      style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: active ? "#202223" : "#6d7175", textAlign: align, whiteSpace: "nowrap", cursor: "pointer", userSelect: "none" }}
-                    >{label}<span style={{opacity: active ? 1 : 0}}>{channelSort.dir === 'desc' ? ' ↓' : ' ↑'}</span></th>
-                  );
-                };
-                return (
+            ) : (
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
                   <tr style={{ borderTop: "1px solid #e3e3e3", borderBottom: "1px solid #e3e3e3" }}>
-                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "left" }}>Channel</th>
-                    {mkChannelTh("Carts", "carts")}
-                    {mkChannelTh("Checkouts", "checkouts")}
-                    {mkChannelTh("Orders", "orders")}
-                    {mkChannelTh("Conv. rate", "convRate")}
+                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "left" }}>Product</th>
+                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Cart adds</th>
+                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Checkouts</th>
+                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Orders</th>
+                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Conv. rate</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {sortedChannels.map((ch, idx) => (
-                    <tr key={idx} style={{ borderBottom: idx < sortedChannels.length - 1 ? "1px solid #f1f1f1" : "none" }}>
-                      <td style={{ padding: "10px 16px" }}>
-                        <span style={{ fontSize: "12px", fontWeight: 600, color: ch.color, background: ch.bg, padding: "2px 8px", borderRadius: "4px" }}>
-                          {ch.label}
-                        </span>
+                  {rTopProducts.map((product, idx) => (
+                    <tr key={product.productId} style={{ borderBottom: idx < rTopProducts.length - 1 ? "1px solid #f1f1f1" : "none" }}>
+                      <td style={{ padding: "10px 16px", fontSize: "13px", fontWeight: 500, color: "#202223", maxWidth: "200px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {product.productTitle}
                       </td>
-                      <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{ch.carts}</td>
-                      <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{ch.checkouts}</td>
-                      <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: ch.orders > 0 ? 600 : 400 }}>{ch.orders}</td>
-                      <td style={{ padding: "10px 16px", fontSize: "13px", color: ch.carts > 0 && ch.orders > 0 ? "#008060" : "#919eab", textAlign: "right", fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>
-                        {ch.carts > 0 ? `${((ch.orders / ch.carts) * 100).toFixed(1)}%` : "—"}
+                      <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                        {product.cartAdds}
+                      </td>
+                      <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                        {product.checkouts}
+                      </td>
+                      <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                        {product.conversions}
+                      </td>
+                      <td style={{ padding: "10px 16px", fontSize: "13px", color: "#008060", textAlign: "right", fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>
+                        {product.conversionRate.toFixed(1)}%
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-                );
-              })()}
-            </div>
-          )}
+            )}
+          </div>
 
-          {/* Top Campaigns */}
-          {hasCampaignData && (
-            <div style={{
-              background: "#ffffff",
-              border: "1px solid #e3e3e3",
-              borderRadius: "8px",
-              overflowX: "auto",
-              marginBottom: "20px",
-              boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
-            }}>
-              <div style={{ padding: "16px 16px 12px", display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                <h3 style={{ fontSize: "15px", fontWeight: 600, color: "#202223", margin: 0 }}>Top Campaigns</h3>
-                <span style={{ fontSize: "12px", color: "#919eab" }}>by utm_campaign</span>
+          {/* Top Referrers */}
+          <div style={{
+            background: "#ffffff",
+            border: "1px solid #e3e3e3",
+            borderRadius: "8px",
+            overflowX: "auto",
+            marginBottom: "20px",
+            boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
+          }}>
+            <div style={{ padding: "16px 16px 12px" }}>
+              <h3 style={{ fontSize: "15px", fontWeight: 600, color: "#202223", margin: 0 }}>
+                Top Referrers
+              </h3>
+            </div>
+            {rTopReferrers.length === 0 ? (
+              <div style={{ fontSize: "14px", color: "#6d7175", padding: "20px 16px", textAlign: "center" }}>
+                No referrer data yet
               </div>
+            ) : (
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
                   <tr style={{ borderTop: "1px solid #e3e3e3", borderBottom: "1px solid #e3e3e3" }}>
-                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "left" }}>Campaign</th>
-                    {(['cartAdds','orders','revenue','convRate'] as const).map(col => {
-                      const labels: Record<string,string> = { cartAdds:'Cart adds', orders:'Orders', revenue:'Revenue', convRate:'Conv. rate' };
-                      const active = campaignSort.col === col;
-                      return <th key={col} onClick={() => setCampaignSort(s => s.col===col ? {col,dir:s.dir==='desc'?'asc':'desc'} : {col,dir:'desc'})} style={{ padding:"8px 16px", fontSize:"12px", fontWeight:600, color:active?"#202223":"#6d7175", textAlign:"right", whiteSpace:"nowrap", cursor:"pointer", userSelect:"none" }}>{labels[col]}<span style={{opacity: active ? 1 : 0}}>{campaignSort.dir==='desc' ? ' ↓' : ' ↑'}</span></th>;
-                    })}
+                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "left" }}>Source</th>
+                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Sessions</th>
+                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Cart adds</th>
+                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Conv. rate</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {[...rTopCampaigns].sort((a,b) => { const m=campaignSort.dir==='desc'?-1:1; const col=campaignSort.col as keyof typeof a; return m*((a[col] as number)-(b[col] as number)); }).map((row, idx) => {
-                    const ch = getTrafficChannel(row.utmSource, row.utmMedium);
-                    return (
-                      <tr key={idx} style={{ borderBottom: idx < rTopCampaigns.length - 1 ? "1px solid #f1f1f1" : "none" }}>
-                        <td style={{ padding: "10px 16px" }}>
-                          <div style={{ fontSize: "13px", fontWeight: 500, color: "#202223", marginBottom: "2px" }}>{row.campaign}</div>
-                          <span style={{ fontSize: "11px", fontWeight: 600, color: ch.color, background: ch.bg, padding: "1px 6px", borderRadius: "3px" }}>{ch.label}</span>
-                        </td>
-                        <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{row.cartAdds}</td>
-                        <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{row.orders}</td>
-                        <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-                          {row.revenue > 0 ? `$${row.revenue.toFixed(2)}` : "—"}
-                        </td>
-                        <td style={{ padding: "10px 16px", fontSize: "13px", color: "#008060", textAlign: "right", fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>
-                          {row.convRate.toFixed(1)}%
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {/* Top Locations */}
-          {hasGeoData && (
-            <div style={{
-              background: "#ffffff",
-              border: "1px solid #e3e3e3",
-              borderRadius: "8px",
-              overflowX: "auto",
-              marginBottom: "20px",
-              boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
-            }}>
-              <div style={{ padding: "16px 16px 12px" }}>
-                <h3 style={{ fontSize: "15px", fontWeight: 600, color: "#202223", margin: 0 }}>Top Locations</h3>
-              </div>
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead>
-                  <tr style={{ borderTop: "1px solid #e3e3e3", borderBottom: "1px solid #e3e3e3" }}>
-                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "left" }}>Location</th>
-                    {(['sessions','cartAdds','orders','convRate'] as const).map(col => {
-                      const labels: Record<string,string> = { sessions:'Sessions', cartAdds:'Cart adds', orders:'Orders', convRate:'Conv. rate' };
-                      const active = locationSort.col === col;
-                      return <th key={col} onClick={() => setLocationSort(s => s.col===col ? {col,dir:s.dir==='desc'?'asc':'desc'} : {col,dir:'desc'})} style={{ padding:"8px 16px", fontSize:"12px", fontWeight:600, color:active?"#202223":"#6d7175", textAlign:"right", whiteSpace:"nowrap", cursor:"pointer", userSelect:"none" }}>{labels[col]}<span style={{opacity: active ? 1 : 0}}>{locationSort.dir==='desc' ? ' ↓' : ' ↑'}</span></th>;
-                    })}
-                  </tr>
-                </thead>
-                <tbody>
-                  {[...rTopLocations].sort((a,b) => { const m=locationSort.dir==='desc'?-1:1; const col=locationSort.col as keyof typeof a; return m*((a[col] as number)-(b[col] as number)); }).map((row, idx) => (
-                    <tr key={idx} style={{ borderBottom: idx < rTopLocations.length - 1 ? "1px solid #f1f1f1" : "none" }}>
-                      <td style={{ padding: "10px 16px", fontSize: "13px", fontWeight: 500, color: "#202223" }}>{row.location}</td>
-                      <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{row.sessions}</td>
-                      <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{row.cartAdds}</td>
-                      <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{row.orders}</td>
-                      <td style={{ padding: "10px 16px", fontSize: "13px", color: "#008060", textAlign: "right", fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>{row.convRate.toFixed(1)}%</td>
+                  {rTopReferrers.map((referrer, idx) => (
+                    <tr key={idx} style={{ borderBottom: idx < rTopReferrers.length - 1 ? "1px solid #f1f1f1" : "none" }}>
+                      <td style={{ padding: "10px 16px", fontSize: "13px", fontWeight: 500, color: "#202223", maxWidth: "200px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {referrer.referrer}
+                      </td>
+                      <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                        {referrer.sessions}
+                      </td>
+                      <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                        {referrer.cartAdds}
+                      </td>
+                      <td style={{ padding: "10px 16px", fontSize: "13px", color: "#008060", textAlign: "right", fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>
+                        {referrer.conversionRate.toFixed(1)}%
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            </div>
-          )}
-
-          {/* Data scope disclaimer */}
-          <div style={{ fontSize: "12px", color: "#919eab", textAlign: "center", paddingBottom: "8px" }}>
-            📊 Tracking begins when a visitor adds to cart. Visitors who browse without adding to cart are not included in this data.
+            )}
           </div>
-
         </div>
       )}
 

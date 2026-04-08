@@ -2,32 +2,17 @@
 // This route is OUTSIDE the authenticated app layout (no "app." prefix)
 // and does NOT require Shopify authentication
 
-import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
+import type { ActionFunctionArgs } from "react-router";
 import { data } from "react-router";
-
-// CORS headers for Web Pixel sandbox — pixel runs from extensions.shopifycdn.com
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
-};
-
-// Handle CORS preflight (OPTIONS) — required for pixel fetch with Content-Type: application/json
-export const loader = async ({ request }: LoaderFunctionArgs) => {
-  if (request.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: CORS_HEADERS });
-  }
-  return new Response("Method not allowed", { status: 405 });
-};
 import { Prisma } from "@prisma/client";
 import prisma from "../db.server";
 import { detectBot } from "../services/bot.server";
-// Geo: Cloudflare headers when available, iplocate.io API fallback otherwise
+// Geo now handled via Cloudflare headers — no external API needed
 import sseManager from "../services/sse.server";
 import { checkRateLimit, sanitizeString } from "../utils/security.server";
 
-function parseUserAgent(ua: string | null): { browser: string | null; os: string | null; deviceModel: string | null } {
-  if (!ua) return { browser: null, os: null, deviceModel: null };
+function parseUserAgent(ua: string | null): { browser: string | null; os: string | null } {
+  if (!ua) return { browser: null, os: null };
 
   let browser: string | null = null;
   if (/Edg\//i.test(ua)) browser = "Edge";
@@ -45,32 +30,12 @@ function parseUserAgent(ua: string | null): { browser: string | null; os: string
   else if (/Linux/i.test(ua)) os = "Linux";
   else if (/CrOS/i.test(ua)) os = "Chrome OS";
 
-  // Device model detection
-  let deviceModel: string | null = null;
-  if (/iPhone/i.test(ua)) {
-    deviceModel = "iPhone";
-  } else if (/iPad/i.test(ua)) {
-    deviceModel = "iPad";
-  } else if (/Android/i.test(ua)) {
-    // Try to extract Android device model from UA string
-    // Pattern: Android <version>; <Model>) or ; <Model> Build/
-    const buildMatch = ua.match(/;\s*([^;)]+?)\s+Build\//i);
-    const androidMatch = ua.match(/Android[^;]*;\s*([^;)]+)/i);
-    const model = buildMatch?.[1] || androidMatch?.[1];
-    if (model) {
-      deviceModel = model.trim();
-    } else {
-      deviceModel = "Android";
-    }
-  }
-  // null for desktop (Windows, macOS, Linux, Chrome OS)
-
-  return { browser, os, deviceModel };
+  return { browser, os };
 }
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   if (request.method !== "POST") {
-    return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } });
+    return data({ error: "Method not allowed" }, { status: 405 });
   }
 
   // Rate limit by IP — 120 requests/minute covers normal pixel activity.
@@ -82,17 +47,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
     "unknown";
   if (!checkRateLimit(clientIp, 120, 60_000)) {
-    return data({ error: "Too many requests" }, { status: 429, headers: CORS_HEADERS });
+    return data({ error: "Too many requests" }, { status: 429 });
   }
 
   try {
-    // Grab geo data — try Cloudflare headers first (if CF is in front), fall back to IP lookup
+    // Grab geo data from Cloudflare/proxy headers
     const cfCountry = request.headers.get("cf-ipcountry") || request.headers.get("CF-IPCountry");
     const cfCity = request.headers.get("cf-ipcity") || request.headers.get("CF-IPCity");
-    // Railway uses Fastly, real IP is in x-forwarded-for
-    const cfIP = request.headers.get("cf-connecting-ip") ||
-      request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-      request.headers.get("fly-client-ip") || null;
+    const cfIP = request.headers.get("cf-connecting-ip") || request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
 
     // Parse event payload
     const payload = await request.json();
@@ -114,8 +76,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       utmSource,
       utmMedium,
       utmCampaign,
-      utmContent,
-      utmId,
       deviceType,
       browser,
       os,
@@ -139,12 +99,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     const safeUtmSource = sanitizeString(utmSource, 100);
     const safeUtmMedium = sanitizeString(utmMedium, 100);
     const safeUtmCampaign = sanitizeString(utmCampaign, 255);
-    const safeUtmContent = sanitizeString(utmContent, 255);
-    const safeUtmId = sanitizeString(utmId, 255);
 
     // Validate required fields
     if (!safeShopDomain || !safeVisitorId || !eventType) {
-      return data({ error: "Missing required fields: shopDomain, visitorId, eventType" }, { status: 400, headers: CORS_HEADERS });
+      return data({ error: "Missing required fields: shopDomain, visitorId, eventType" }, { status: 400 });
     }
 
     // Basic origin validation — referer header is optional and stripped by some browsers/extensions
@@ -156,7 +114,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     if (!session) {
       console.warn(`[Public API] Invalid shop domain: ${safeShopDomain}`);
-      return data({ error: "Invalid shop" }, { status: 403, headers: CORS_HEADERS });
+      return data({ error: "Invalid shop" }, { status: 403 });
     }
 
     // Find or create Shop record — upsert is race-condition-safe
@@ -171,35 +129,15 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     const isSuspectedBot = shop.botFilterEnabled ? botDetection.isBot : false;
 
     // Geo: Cloudflare headers first, fall back to billing address from checkout events
-    const resolvedIP = cfIP || (ipAddress && !ipAddress.startsWith('127') && !ipAddress.startsWith('::1') ? ipAddress : null) || null;
+    const city = cfCity || billingCity || null;
+    const country = billingCountry || null;
+    const countryCode = (cfCountry && cfCountry !== "XX") ? cfCountry : (billingCountryCode || null);
+    const resolvedIP = cfIP || ipAddress || null;
 
-    // Geo resolution: CF headers > IP lookup > billing address fallback
-    let city = cfCity || billingCity || null;
-    let country = billingCountry || null;
-    let countryCode = (cfCountry && cfCountry !== "XX") ? cfCountry : (billingCountryCode || null);
-
-    // If no CF geo and we have an IP, try iplocate.io (free, no key, 1k/day)
-    if (!city && !countryCode && resolvedIP && resolvedIP !== "unknown") {
-      try {
-        const geoRes = await fetch(`https://www.iplocate.io/api/lookup/${resolvedIP}`, {
-          signal: AbortSignal.timeout(1500), // 1.5s timeout — don't slow down the response
-        });
-        if (geoRes.ok) {
-          const geo = await geoRes.json();
-          city = geo.city || null;
-          country = geo.country || null;
-          countryCode = geo.country_code || null;
-        }
-      } catch {
-        // Geo lookup failed — non-fatal, continue without
-      }
-    }
-
-    // Parse browser, OS, and device model from user agent
+    // Parse browser and OS from user agent
     const parsedUA = parseUserAgent(userAgent || null);
     const resolvedBrowser = browser || parsedUA.browser;
     const resolvedOS = os || parsedUA.os;
-    const resolvedDeviceModel = parsedUA.deviceModel;
 
     // Find or create CartSession — upsert is race-condition-safe
     // On conflict (same shopId+visitorId), only update mutable identity fields.
@@ -217,8 +155,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         utmSource: safeUtmSource,
         utmMedium: safeUtmMedium,
         utmCampaign: safeUtmCampaign,
-        utmContent: safeUtmContent,
-        utmId: safeUtmId,
         ipAddress: resolvedIP,
         city,
         country,
@@ -226,7 +162,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         deviceType,
         browser: resolvedBrowser,
         os: resolvedOS,
-        deviceModel: resolvedDeviceModel,
         userAgent,
         isSuspectedBot,
         botReason: isSuspectedBot ? botDetection.reason : null,
@@ -239,14 +174,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         city: city || undefined,
         country: country || undefined,
         countryCode: countryCode || undefined,
-        // UTMs: update if present (backfills sessions that existed before a UTM visit)
-        utmSource: safeUtmSource || undefined,
-        utmMedium: safeUtmMedium || undefined,
-        utmCampaign: safeUtmCampaign || undefined,
-        utmContent: safeUtmContent || undefined,
-        utmId: safeUtmId || undefined,
-        // Landing page: only set if not already set (preserve original entry page)
-        landingPage: safeLandingPage || undefined,
         updatedAt: new Date(),
       },
     });
@@ -351,9 +278,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       session: sessionWithEvents,
     });
 
-    return data({ success: true, sessionId: cartSession.id, eventId: event.id }, { headers: CORS_HEADERS });
+    return data({ success: true, sessionId: cartSession.id, eventId: event.id });
   } catch (error) {
     console.error("[Public API Events] Error:", error);
-    return data({ error: "Internal server error" }, { status: 500, headers: CORS_HEADERS });
+    return data({ error: "Internal server error" }, { status: 500 });
   }
 };
