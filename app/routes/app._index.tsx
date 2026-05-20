@@ -339,6 +339,10 @@ export default function Index() {
     setHighValueThreshold(savedSettings.highValueThreshold);
   };
   const [reportRange, setReportRange] = useState<7 | 30 | 90>(30);
+  // Live Carts: hide sessions flagged as suspected bots by default. Toggle
+  // reveals them. The flag is set either by the pixel UA matcher (when
+  // botFilterEnabled is on) or the webhook burst-cluster heuristic.
+  const [showBots, setShowBots] = useState(false);
 
   // Connect to SSE for real-time updates
   useEffect(() => {
@@ -355,7 +359,11 @@ export default function Index() {
         // Guard against null session (race: session deleted between webhook write and SSE broadcast)
         if (!update?.session) return;
 
-        triggerFlash(update.session.id);
+        // Don't flash sessions flagged as suspected bots — they're filtered
+        // from the list anyway, and flashing would draw the eye to an empty row.
+        if (!update.session.isSuspectedBot) {
+          triggerFlash(update.session.id);
+        }
 
         setSessions((prev) => {
           const incoming = update.session;
@@ -668,6 +676,13 @@ export default function Index() {
     .map(([referrer, d]) => ({ referrer, sessions: d.sessions, cartAdds: d.cartAdds, conversionRate: d.cartAdds > 0 ? (d.conversions / d.cartAdds) * 100 : 0 }))
     .sort((a, b) => b.sessions - a.sessions)
     .slice(0, 10);
+
+  // Live Carts filter — bots hidden by default. Reports stats are NOT filtered
+  // so the merchant can still see the underlying bot-impact in aggregate.
+  const liveBotCount = sessions.filter((s) => s.isSuspectedBot).length;
+  const visibleSessions = showBots
+    ? sessions
+    : sessions.filter((s) => !s.isSuspectedBot);
 
   return (
     // @ts-ignore -- App Bridge s-page type definition omits `title` but it works at runtime
@@ -1013,11 +1028,36 @@ export default function Index() {
                   borderRadius: "4px",
                   fontWeight: 600
                 }}>
-                  {sessions.length}
+                  {visibleSessions.length}
                 </span>
+                {liveBotCount > 0 && (
+                  <button
+                    onClick={() => setShowBots((s) => !s)}
+                    title={
+                      showBots
+                        ? "Hide sessions flagged by the bot UA matcher or the burst-cluster heuristic"
+                        : "Show sessions flagged as suspected bots (UA match or burst-cluster)"
+                    }
+                    style={{
+                      marginLeft: "auto",
+                      background: showBots ? "#fff8e6" : "#ffffff",
+                      border: "1px solid #e3e3e3",
+                      borderRadius: "4px",
+                      padding: "4px 10px",
+                      fontSize: "12px",
+                      color: "#6d7175",
+                      cursor: "pointer",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {showBots
+                      ? `Hide suspected bots (${liveBotCount})`
+                      : `Show suspected bots (${liveBotCount})`}
+                  </button>
+                )}
               </div>
 
-              {sessions.length === 0 ? (
+              {visibleSessions.length === 0 ? (
                 <div style={{
                   background: "#ffffff",
                   border: "1px solid #e3e3e3",
@@ -1026,7 +1066,16 @@ export default function Index() {
                   textAlign: "center",
                   boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
                 }}>
-                  {data.pixelInstalled || fetcher.data?.pixelInstalled ? (
+                  {sessions.length > 0 ? (
+                    <div>
+                      <div style={{ fontSize: "16px", fontWeight: 600, color: "#202223", marginBottom: "8px" }}>
+                        All recent sessions flagged as suspected bots
+                      </div>
+                      <div style={{ fontSize: "14px", color: "#6d7175" }}>
+                        {liveBotCount} session{liveBotCount === 1 ? "" : "s"} hidden. Click "Show suspected bots" above to review them.
+                      </div>
+                    </div>
+                  ) : data.pixelInstalled || fetcher.data?.pixelInstalled ? (
                     <div>
                       <div style={{
                         width: "48px",
@@ -1105,7 +1154,7 @@ export default function Index() {
                 </div>
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                  {sessions.slice(0, 50).map((session) => {
+                  {visibleSessions.slice(0, 50).map((session) => {
                     const status = getStatusBadge(session);
                     const products = session.events
                       ?.filter((e) => e.eventType === "cart_add")

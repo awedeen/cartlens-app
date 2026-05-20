@@ -6,6 +6,58 @@ import { authenticate, unauthenticated } from "../shopify.server";
 import prisma from "../db.server";
 import sseManager from "../services/sse.server";
 
+// Burst-cluster detection — guards against scraper / stock-checker bots that
+// hit /cart/add directly with a single variant. Each request gets a fresh
+// cart_token from Shopify, so without this we get N parallel sessions for the
+// same product with no UTM, no customer info, and a single line item.
+//
+// Heuristic: a NEW session counts as part of a burst when, in the last
+// BURST_WINDOW_MS, there are at least BURST_THRESHOLD sessions (including the
+// new one) that all share: same variant, single-item cart, no customer info,
+// no UTM, not converted. Flagging is soft (isSuspectedBot=true) — never drop.
+const BURST_WINDOW_MS = 5 * 60 * 1000;
+const BURST_THRESHOLD = 5;
+
+interface BurstResult {
+  isBurst: boolean;
+  variantId: string | null;
+  peerIds: string[];
+}
+
+async function detectBurstCluster(
+  shopId: string,
+  newSessionId: string,
+  lineItems: any[],
+): Promise<BurstResult> {
+  if (!Array.isArray(lineItems) || lineItems.length !== 1) {
+    return { isBurst: false, variantId: null, peerIds: [] };
+  }
+  const variantId = lineItems[0]?.variant_id?.toString() || null;
+  if (!variantId) return { isBurst: false, variantId: null, peerIds: [] };
+
+  const since = new Date(Date.now() - BURST_WINDOW_MS);
+
+  const peers = await prisma.cartSession.findMany({
+    where: {
+      shopId,
+      id: { not: newSessionId },
+      createdAt: { gte: since },
+      itemCount: 1,
+      customerEmail: null,
+      customerId: null,
+      utmSource: null,
+      orderPlaced: false,
+      events: { some: { eventType: "cart_add", variantId } },
+    },
+    select: { id: true },
+  });
+
+  if (peers.length + 1 < BURST_THRESHOLD) {
+    return { isBurst: false, variantId, peerIds: [] };
+  }
+  return { isBurst: true, variantId, peerIds: peers.map((p) => p.id) };
+}
+
 // Cache product images to avoid repeated API calls — capped at 500 entries (LRU-lite: evict oldest on overflow)
 const IMAGE_CACHE_MAX = 500;
 const imageCache = new Map<string, string | null>();
@@ -76,6 +128,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       include: { events: true },
     });
 
+    // Tracks whether this webhook just produced a brand-new session — used to
+    // gate burst-cluster detection so we don't re-run it on every quantity change.
+    let sessionWasJustCreated = false;
+
     if (topic === "CARTS_CREATE" && !session && lineItems.length > 0) {
       session = await prisma.cartSession.upsert({
         where: { shopId_visitorId: { shopId: shopRecord.id, visitorId: cartToken } },
@@ -90,6 +146,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         },
         include: { events: true },
       });
+      sessionWasJustCreated = true;
 
       // Create initial cart_add events — pre-fetch images in parallel
       const createImages = await Promise.all(
@@ -225,6 +282,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         },
         include: { events: true },
       });
+      sessionWasJustCreated = true;
 
       // Pre-fetch images in parallel for new session items
       const newSessionImages = await Promise.all(
@@ -255,6 +313,36 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     // If no session was created/found (e.g. empty cart with no prior session), bail
     if (!session) {
       return data({ success: true }, { status: 200 });
+    }
+
+    // Burst-cluster detection runs only on brand-new sessions. Soft-flag the
+    // new session AND its peers as suspected bot — the dashboard hides them
+    // by default. We never drop the webhook write: if the heuristic is wrong
+    // the merchant can toggle "show suspected bots" and the data is intact.
+    if (sessionWasJustCreated) {
+      const burst = await detectBurstCluster(shopRecord.id, session.id, lineItems);
+      if (burst.isBurst) {
+        const botReason = `burst_cluster:${burst.variantId}`;
+        await prisma.cartSession.updateMany({
+          where: { id: { in: [session.id, ...burst.peerIds] } },
+          data: { isSuspectedBot: true, botReason },
+        });
+        console.warn(
+          `[Webhook Carts] Burst cluster: variant=${burst.variantId} shop=${shopRecord.shopifyDomain} flagged=${burst.peerIds.length + 1}`
+        );
+
+        // Re-broadcast peer sessions so already-rendered dashboards re-filter
+        // them out of the live feed. Current session is broadcast below.
+        if (burst.peerIds.length > 0) {
+          const peers = await prisma.cartSession.findMany({
+            where: { id: { in: burst.peerIds } },
+            include: { events: { orderBy: { timestamp: "desc" } } },
+          });
+          for (const peer of peers) {
+            sseManager.broadcast(shopRecord.id, "cart-update", { session: peer });
+          }
+        }
+      }
     }
 
     // Broadcast update via SSE
