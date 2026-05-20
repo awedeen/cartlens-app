@@ -136,10 +136,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         AND e."productId" IS NOT NULL
       GROUP BY e."productId"
       ORDER BY COUNT(*) DESC
-      LIMIT 10
+      LIMIT 25
     `;
 
-    // --- 3. Checkout counts per product (distinct sessions) for the top 10 ---
+    // --- 3. Checkout counts per product (distinct sessions) for the top 25 ---
     const productIds = productCartRows.map((r) => r.productId);
     let checkoutRows: ProductCheckoutRow[] = [];
     if (productIds.length > 0) {
