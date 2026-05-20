@@ -10,6 +10,7 @@ import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import prisma from "../db.server";
 import type { CartSession, CartEvent } from "@prisma/client";
+import type { ReportsData } from "./app.api.reports";
 
 type SessionWithEvents = CartSession & { events: CartEvent[] };
 
@@ -274,6 +275,9 @@ export default function Index() {
   const data = useLoaderData<typeof loader>();
   const fetcher = useFetcher();
   const settingsFetcher = useFetcher();
+  // Reports tab fetches its own aggregations server-side from /app/api/reports
+  // so it isn't limited to the 100-session dashboard cap.
+  const reportsFetcher = useFetcher<ReportsData | { error: string }>();
   const [activeTab, setActiveTab] = useState<"live" | "reports" | "settings">("live");
   const [sessions, setSessions] = useState<SessionWithMeta[]>(data.sessions);
   const [selectedSession, setSelectedSession] = useState<SessionWithMeta | null>(null);
@@ -415,6 +419,18 @@ export default function Index() {
       eventSource.close();
     };
   }, [data.shopId]);
+
+  // Load Reports aggregations whenever the Reports tab is active or the range
+  // changes. useFetcher.data persists across loads, so subsequent range
+  // changes keep the prior values visible until the new payload arrives
+  // (stale-while-revalidate — no flash of empty state).
+  useEffect(() => {
+    if (activeTab === "reports") {
+      reportsFetcher.load(`/app/api/reports?range=${reportRange}`);
+    }
+    // reportsFetcher identity is stable across renders — intentionally omitted.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, reportRange]);
 
   const formatTimeAgo = (date: string) => {
     const now = new Date();
@@ -628,54 +644,27 @@ export default function Index() {
     settingsFetcher.submit(formData, { method: "POST" });
   };
 
-  // Compute report stats client-side from loaded sessions, filtered by reportRange
-  const reportRangeCutoff = new Date();
-  reportRangeCutoff.setDate(reportRangeCutoff.getDate() - reportRange);
-  const filteredForReports = sessions.filter(s => new Date(s.createdAt) >= reportRangeCutoff);
-  const rCarts = filteredForReports.filter(s => s.cartCreated).length;
-  const rCheckouts = filteredForReports.filter(s => s.checkoutStarted).length;
-  const rOrders = filteredForReports.filter(s => s.orderPlaced).length;
-  const rAvgCartValue = rCarts > 0
-    ? filteredForReports.filter(s => s.cartCreated).reduce((sum, s) => sum + s.cartTotal, 0) / rCarts
-    : 0;
-  const rConversionRate = rCarts > 0 ? (rOrders / rCarts) * 100 : 0;
-  const rCheckoutRate = rCarts > 0 ? (rCheckouts / rCarts) * 100 : 0;
-  const rCheckoutToOrderRate = rCheckouts > 0 ? (rOrders / rCheckouts) * 100 : 0;
-  // Top products for selected range
-  const rProductMap: Record<string, { title: string; cartAdds: number; checkouts: number; conversions: number }> = {};
-  for (const s of filteredForReports) {
-    const evts = s.events || [];
-    for (const e of evts.filter((e: any) => e.eventType === "cart_add")) {
-      const key = e.productId || "unknown";
-      if (!rProductMap[key]) rProductMap[key] = { title: e.productTitle || "Unknown", cartAdds: 0, checkouts: 0, conversions: 0 };
-      rProductMap[key].cartAdds += 1;
-      if (s.orderPlaced) rProductMap[key].conversions += 1;
-    }
-    const ciProductIds = new Set(evts.filter((e: any) => e.eventType === "checkout_item").map((e: any) => e.productId).filter(Boolean));
-    for (const pid of ciProductIds) {
-      const item = evts.find((e: any) => e.eventType === "checkout_item" && e.productId === pid);
-      if (!rProductMap[pid as string]) rProductMap[pid as string] = { title: item?.productTitle || "Unknown", cartAdds: 0, checkouts: 0, conversions: 0 };
-      rProductMap[pid as string].checkouts += 1;
-    }
-  }
-  const rTopProducts = Object.entries(rProductMap)
-    .map(([productId, d]) => ({ productId, productTitle: d.title, cartAdds: d.cartAdds, checkouts: d.checkouts, conversions: d.conversions, conversionRate: d.cartAdds > 0 ? (d.conversions / d.cartAdds) * 100 : 0 }))
-    .sort((a, b) => b.cartAdds - a.cartAdds)
-    .slice(0, 10);
+  // Reports tab data — fetched server-side from /app/api/reports?range=N so
+  // aggregations run against the full date-range slice, not the 100-session
+  // dashboard cap. Stale-while-revalidate: useFetcher.data persists across
+  // loads, so changing the range keeps prior numbers visible until the new
+  // payload arrives.
+  const reportsRaw = reportsFetcher.data;
+  const reportsData: ReportsData | null =
+    reportsRaw && !("error" in reportsRaw) ? (reportsRaw as ReportsData) : null;
+  const reportsFirstLoading =
+    !reportsData && reportsFetcher.state === "loading";
 
-  // Top referrers for selected range — computed client-side so the toggle affects this too
-  const rReferrerMap: Record<string, { sessions: number; cartAdds: number; conversions: number }> = {};
-  for (const s of filteredForReports) {
-    const referrer = s.referrerUrl || "Direct";
-    if (!rReferrerMap[referrer]) rReferrerMap[referrer] = { sessions: 0, cartAdds: 0, conversions: 0 };
-    rReferrerMap[referrer].sessions += 1;
-    if (s.cartCreated) rReferrerMap[referrer].cartAdds += 1;
-    if (s.orderPlaced) rReferrerMap[referrer].conversions += 1;
-  }
-  const rTopReferrers = Object.entries(rReferrerMap)
-    .map(([referrer, d]) => ({ referrer, sessions: d.sessions, cartAdds: d.cartAdds, conversionRate: d.cartAdds > 0 ? (d.conversions / d.cartAdds) * 100 : 0 }))
-    .sort((a, b) => b.sessions - a.sessions)
-    .slice(0, 10);
+  const rTotalSessions = reportsData?.totalSessions ?? 0;
+  const rCarts = reportsData?.totalCarts ?? 0;
+  const rCheckouts = reportsData?.totalCheckouts ?? 0;
+  const rOrders = reportsData?.totalOrders ?? 0;
+  const rAvgCartValue = reportsData?.avgCartValue ?? 0;
+  const rConversionRate = reportsData?.conversionRate ?? 0;
+  const rCheckoutRate = reportsData?.checkoutRate ?? 0;
+  const rCheckoutToOrderRate = reportsData?.checkoutToOrderRate ?? 0;
+  const rTopProducts = reportsData?.topProducts ?? [];
+  const rTopReferrers = reportsData?.topReferrers ?? [];
 
   // Live Carts filter — bots hidden by default. Reports stats are NOT filtered
   // so the merchant can still see the underlying bot-impact in aggregate.
@@ -1304,7 +1293,10 @@ export default function Index() {
           {/* Date Range Toggle */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
             <span style={{ fontSize: "12px", color: "#9ca3af" }}>
-              Based on {sessions.length} most recent session{sessions.length !== 1 ? "s" : ""}
+              {reportsFirstLoading
+                ? "Loading…"
+                : `Based on ${rTotalSessions.toLocaleString()} session${rTotalSessions !== 1 ? "s" : ""} in the last ${reportRange} days`}
+              {reportsData && reportsFetcher.state === "loading" && " · refreshing…"}
             </span>
             <div style={{ display: "flex", border: "1px solid #e3e3e3", borderRadius: "6px", overflow: "hidden" }}>
               {([7, 30, 90] as const).map((r) => (
