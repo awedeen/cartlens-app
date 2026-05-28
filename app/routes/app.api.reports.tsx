@@ -109,7 +109,12 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       FROM "CartSession"
       WHERE "shopId" = ${shop.id}
         AND "createdAt" >= ${cutoff}
-        AND "isSuspectedBot" = false
+        AND (
+          "isSuspectedBot" = false
+          OR "orderPlaced" = true
+          OR "customerEmail" IS NOT NULL
+          OR "customerName" IS NOT NULL
+        )
     `;
     const sum = summaryRows[0];
 
@@ -131,7 +136,12 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       INNER JOIN "CartSession" s ON s.id = e."sessionId"
       WHERE s."shopId" = ${shop.id}
         AND s."createdAt" >= ${cutoff}
-        AND s."isSuspectedBot" = false
+        AND (
+          s."isSuspectedBot" = false
+          OR s."orderPlaced" = true
+          OR s."customerEmail" IS NOT NULL
+          OR s."customerName" IS NOT NULL
+        )
         AND e."eventType" = 'cart_add'
         AND e."productId" IS NOT NULL
       GROUP BY e."productId"
@@ -151,7 +161,12 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         INNER JOIN "CartSession" s ON s.id = e."sessionId"
         WHERE s."shopId" = ${shop.id}
           AND s."createdAt" >= ${cutoff}
-          AND s."isSuspectedBot" = false
+          AND (
+            s."isSuspectedBot" = false
+            OR s."orderPlaced" = true
+            OR s."customerEmail" IS NOT NULL
+            OR s."customerName" IS NOT NULL
+          )
           AND e."eventType" = 'checkout_item'
           AND e."productId" IN (${Prisma.join(productIds)})
         GROUP BY e."productId"
@@ -184,7 +199,12 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       FROM "CartSession"
       WHERE "shopId" = ${shop.id}
         AND "createdAt" >= ${cutoff}
-        AND "isSuspectedBot" = false
+        AND (
+          "isSuspectedBot" = false
+          OR "orderPlaced" = true
+          OR "customerEmail" IS NOT NULL
+          OR "customerName" IS NOT NULL
+        )
       GROUP BY referrer
       ORDER BY COUNT(*) DESC
       LIMIT 10

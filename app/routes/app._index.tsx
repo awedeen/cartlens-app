@@ -666,12 +666,22 @@ export default function Index() {
   const rTopProducts = reportsData?.topProducts ?? [];
   const rTopReferrers = reportsData?.topReferrers ?? [];
 
-  // Live Carts filter — bots hidden by default. Reports stats are NOT filtered
-  // so the merchant can still see the underlying bot-impact in aggregate.
-  const liveBotCount = sessions.filter((s) => s.isSuspectedBot).length;
+  // Live Carts filter — bots hidden by default, BUT never hide a session that
+  // has shown real-customer signals (placed order, captured email/name). The
+  // burst-cluster heuristic occasionally flags real anonymous shoppers of hot
+  // products; once such a session checks out or a customer is identified, the
+  // flag is treated as a false positive and the session is unconditionally
+  // shown. Webhooks also clear the flag on these signals (forward fix); this
+  // predicate is the defense-in-depth layer for any rows that slipped through.
+  const isHiddenBot = (s: SessionWithMeta) =>
+    s.isSuspectedBot &&
+    !s.orderPlaced &&
+    !s.customerEmail &&
+    !s.customerName;
+  const liveBotCount = sessions.filter(isHiddenBot).length;
   const visibleSessions = showBots
     ? sessions
-    : sessions.filter((s) => !s.isSuspectedBot);
+    : sessions.filter((s) => !isHiddenBot(s));
 
   return (
     // @ts-ignore -- App Bridge s-page type definition omits `title` but it works at runtime
