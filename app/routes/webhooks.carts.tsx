@@ -16,7 +16,11 @@ import sseManager from "../services/sse.server";
 // new one) that all share: same variant, single-item cart, no customer info,
 // no UTM, not converted. Flagging is soft (isSuspectedBot=true) — never drop.
 const BURST_WINDOW_MS = 5 * 60 * 1000;
-const BURST_THRESHOLD = 5;
+// Threshold raised from 5 → 10 after observing false positives on hot
+// products during peak hours (5+ real anonymous buyers of a popular SKU
+// within 5 min isn't rare on busy stores). Real scraper attacks routinely
+// hit 20–50+ in this window, so we still catch them comfortably.
+const BURST_THRESHOLD = 10;
 
 interface BurstResult {
   isBurst: boolean;

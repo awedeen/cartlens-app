@@ -54,7 +54,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     }
 
     if (session) {
-      // Mark session as converted
+      // Mark session as converted. Conversion is the strongest possible
+      // "real human" signal — if a session ever placed an order, the
+      // burst-cluster bot flag was a false positive. Clear it.
       await prisma.cartSession.update({
         where: { id: session.id },
         data: {
@@ -62,6 +64,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           orderId,
           orderNumber: orderNumber || null,
           orderValue,
+          isSuspectedBot: false,
+          botReason: null,
           customerId: customerId || session.customerId,
           customerEmail: customerEmail || session.customerEmail,
           customerName: (() => {

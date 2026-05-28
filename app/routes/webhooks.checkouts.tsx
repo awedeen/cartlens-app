@@ -50,6 +50,15 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const email = payload.email || payload.customer?.email;
   if (email) updates.customerEmail = email;
 
+  // Reaching checkout with any customer signal is a strong "real human" cue.
+  // Clear any prior burst-cluster bot flag so the session reappears in Live
+  // Carts and counts in Reports. Conversion webhook clears it too — this
+  // catches the case where customer browses checkout but doesn't yet convert.
+  if (updates.customerId || updates.customerEmail) {
+    updates.isSuspectedBot = false;
+    updates.botReason = null;
+  }
+
   // Name: shipping address → billing address → customer object
   // Prefer what the user actually typed at checkout over their stored account profile.
   // shipping_address is populated from the shipping step form (most live source).
