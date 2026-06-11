@@ -7,6 +7,7 @@ import { Prisma } from "@prisma/client";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import sseManager from "../services/sse.server";
+import { findFallbackSession } from "../services/attribution.server";
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   try {
@@ -27,12 +28,34 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   }
 
   // Find the cart session by cart token (stored as visitorId) + shop
-  const cartSession = await prisma.cartSession.findFirst({
+  let cartSession = await prisma.cartSession.findFirst({
     where: {
       shopId: shopRecord.id,
       visitorId: cartToken,
     },
   });
+
+  // Fallback attribution: same cart-token drift that strands orders also strands
+  // checkouts. Recover the originating session by customer identity or a unique
+  // contents match so the funnel reaches "Checkout" (and captures the email)
+  // on the right cart instead of silently dropping the event.
+  if (!cartSession) {
+    const recovered = await findFallbackSession({
+      shopId: shopRecord.id,
+      customerId: payload.customer?.id ? String(payload.customer.id) : null,
+      customerEmail: payload.email || payload.customer?.email || null,
+      variantIds: (payload.line_items || [])
+        .map((li: any) => li.variant_id?.toString())
+        .filter(Boolean),
+      before: payload.created_at ? new Date(payload.created_at) : new Date(),
+    });
+    if (recovered) {
+      cartSession = recovered.session;
+      console.log(
+        `[Checkout Webhook] Recovered session ${cartSession.id} via ${recovered.via} fallback`,
+      );
+    }
+  }
 
   if (!cartSession) {
     return data({ success: true }, { status: 200 });
