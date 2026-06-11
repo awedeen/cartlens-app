@@ -5,6 +5,7 @@ import { data } from "react-router";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import sseManager from "../services/sse.server";
+import { findFallbackSession } from "../services/attribution.server";
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   try {
@@ -51,6 +52,28 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     if (!cartToken) {
       console.log(`[Webhook Orders] No cart_token — likely draft/POS/API order, skipping attribution`);
+    }
+
+    // Fallback attribution: the order carried a cart_token but it matched no
+    // session — Shopify rotated the token, or an accelerated checkout skipped the
+    // cart so carts/create never recorded it. Recover the originating session by
+    // customer identity, or by a unique contents match, before giving up.
+    if (cartToken && !session) {
+      const recovered = await findFallbackSession({
+        shopId: shopRecord.id,
+        customerId,
+        customerEmail,
+        variantIds: (payload.line_items || [])
+          .map((li: any) => li.variant_id?.toString())
+          .filter(Boolean),
+        before: payload.created_at ? new Date(payload.created_at) : new Date(),
+      });
+      if (recovered) {
+        session = recovered.session;
+        console.log(
+          `[Webhook Orders] Recovered session ${session.id} for order ${orderId} via ${recovered.via} fallback`,
+        );
+      }
     }
 
     if (session) {
