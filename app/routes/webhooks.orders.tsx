@@ -5,7 +5,7 @@ import { data } from "react-router";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import sseManager from "../services/sse.server";
-import { findFallbackSession } from "../services/attribution.server";
+import { findFallbackSession, reconcilePixelSession } from "../services/attribution.server";
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   try {
@@ -29,7 +29,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     const orderId = payload.id?.toString();
     const orderNumber = payload.order_number?.toString();
     const customerId = payload.customer?.id?.toString();
-    const customerEmail = payload.customer?.email;
+    // Guest orders often have no customer object but do carry a top-level email —
+    // fall back to it so identity-based attribution/merge still works for guests.
+    const customerEmail = payload.customer?.email || payload.email;
     const orderValue = parseFloat(payload.total_price || "0");
 
     const cartToken = payload.cart_token;
@@ -110,6 +112,26 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           eventType: "checkout_completed",
         },
       });
+
+      // Session unification: fold the shopper's pixel "marketing" session (UTM,
+      // referrer, device, page-views) into this converting cart_token session so
+      // the sale is attributed to its true source and the shopper isn't counted
+      // twice. Exact-identity only; no-op when the pixel is dead or unidentified.
+      try {
+        const merged = await reconcilePixelSession({
+          shopId: shopRecord.id,
+          canonicalId: session.id,
+          customerId,
+          customerEmail,
+          before: payload.created_at ? new Date(payload.created_at) : new Date(),
+        });
+        if (merged) {
+          console.log(`[Webhook Orders] Merged pixel session ${merged.mergedId} into ${session.id} via ${merged.via}`);
+        }
+      } catch (e) {
+        // Enrichment is best-effort — never fail the conversion over it.
+        console.error("[Webhook Orders] reconcilePixelSession failed:", e);
+      }
 
       // Broadcast update
       const sessionWithEvents = await prisma.cartSession.findUnique({

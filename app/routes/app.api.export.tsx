@@ -29,8 +29,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       return new Response("Shop not found", { status: 404 });
     }
 
-    // Build query filters — validate dates before use
-    const where: Prisma.CartSessionWhereInput = { shopId: shop.id };
+    // Build query filters — validate dates before use.
+    // Exclude merged pixel shadows so a shopper isn't exported twice.
+    const where: Prisma.CartSessionWhereInput = { shopId: shop.id, mergedInto: null };
 
     if (startDate || endDate) {
       const parsedStart = startDate ? new Date(startDate) : null;

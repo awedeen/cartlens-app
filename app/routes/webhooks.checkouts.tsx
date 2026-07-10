@@ -7,7 +7,7 @@ import { Prisma } from "@prisma/client";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import sseManager from "../services/sse.server";
-import { findFallbackSession } from "../services/attribution.server";
+import { findFallbackSession, reconcilePixelSession } from "../services/attribution.server";
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   try {
@@ -166,6 +166,25 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         })
       )
     );
+  }
+
+  // Session unification: fold the shopper's pixel "marketing" session into this
+  // cart_token session as soon as checkout gives us an identity (email/customer),
+  // so UTM/referrer/device land on the session that will convert — and the pixel
+  // shadow stops showing as a separate row. Exact-identity only; best-effort.
+  try {
+    const merged = await reconcilePixelSession({
+      shopId: shopRecord.id,
+      canonicalId: cartSession.id,
+      customerId: payload.customer?.id ? String(payload.customer.id) : null,
+      customerEmail: email || null,
+      before: payload.created_at ? new Date(payload.created_at) : new Date(),
+    });
+    if (merged) {
+      console.log(`[Checkout Webhook] Merged pixel session ${merged.mergedId} into ${cartSession.id} via ${merged.via}`);
+    }
+  } catch (e) {
+    console.error("[Checkout Webhook] reconcilePixelSession failed:", e);
   }
 
   // Broadcast update via SSE
