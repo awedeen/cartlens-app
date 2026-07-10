@@ -33,8 +33,12 @@ export interface BotDetectionResult {
 }
 
 export function detectBot(userAgent: string | null | undefined): BotDetectionResult {
+  // A missing user agent is "unknown", not a bot. Some privacy browsers and
+  // accelerated checkout flows omit it, and treating that as a bot would hide
+  // real buyers when a shop enables the filter. Only positive UA-pattern matches
+  // (below) flag a bot; scrapers are also caught by the webhook burst heuristic.
   if (!userAgent) {
-    return { isBot: true, reason: "No user agent provided" };
+    return { isBot: false };
   }
 
   const ua = userAgent.toLowerCase();

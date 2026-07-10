@@ -221,8 +221,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         cartAdds,
         checkouts: co.checkouts,
         conversions,
-        conversionRate: cartAdds > 0 ? (conversions / cartAdds) * 100 : 0,
-        checkoutToOrderRate: co.checkouts > 0 ? (co.conversions / co.checkouts) * 100 : 0,
+        conversionRate: cartAdds > 0 ? Math.min(100, (conversions / cartAdds) * 100) : 0,
+        checkoutToOrderRate: co.checkouts > 0 ? Math.min(100, (co.conversions / co.checkouts) * 100) : 0,
       };
     });
 
@@ -240,7 +240,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         checkouts: co.checkouts,
         conversions: co.conversions,
         lost: co.checkouts - co.conversions,
-        checkoutToOrderRate: co.checkouts > 0 ? (co.conversions / co.checkouts) * 100 : 0,
+        checkoutToOrderRate: co.checkouts > 0 ? Math.min(100, (co.conversions / co.checkouts) * 100) : 0,
       }))
       .filter((p) => p.checkouts >= LEAKY_MIN_CHECKOUTS && p.lost > 0)
       .sort((a, b) => b.lost - a.lost || a.checkoutToOrderRate - b.checkoutToOrderRate)
@@ -286,9 +286,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       totalOrders,
       totalRevenue,
       avgCartValue,
-      conversionRate: totalCarts > 0 ? (totalOrders / totalCarts) * 100 : 0,
-      checkoutRate: totalCarts > 0 ? (totalCheckouts / totalCarts) * 100 : 0,
-      checkoutToOrderRate: totalCheckouts > 0 ? (totalOrders / totalCheckouts) * 100 : 0,
+      // Clamp to 100% — accelerated checkouts can set checkoutStarted without
+      // cartCreated, which would otherwise push a rate above 100% and look broken.
+      conversionRate: totalCarts > 0 ? Math.min(100, (totalOrders / totalCarts) * 100) : 0,
+      checkoutRate: totalCarts > 0 ? Math.min(100, (totalCheckouts / totalCarts) * 100) : 0,
+      checkoutToOrderRate: totalCheckouts > 0 ? Math.min(100, (totalOrders / totalCheckouts) * 100) : 0,
       topProducts,
       leakyProducts,
       topReferrers,

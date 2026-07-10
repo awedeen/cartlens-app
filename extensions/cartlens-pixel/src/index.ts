@@ -49,6 +49,17 @@ register(({ analytics, browser, settings, init }) => {
     return typeof u === "string" ? u : "";
   }
 
+  // Persist cookies for a year. `cookie.set(name, value)` alone creates a SESSION
+  // cookie that dies on browser close — a returning shopper would then get a new
+  // visitor id, fragmenting their visits. The cookie API also accepts a fully
+  // formed cookie string, so we add max-age to persist it.
+  const COOKIE_MAX_AGE_SECONDS = 31536000; // 1 year
+  async function setPersistentCookie(name: string, value: string) {
+    try {
+      await browser.cookie.set(`${name}=${value}; max-age=${COOKIE_MAX_AGE_SECONDS}; path=/`);
+    } catch {}
+  }
+
   // --- Cookie helpers (all async) ---
 
   // Cookie format for UTMs: "source|medium|campaign|content|id|landingPage"
@@ -133,9 +144,7 @@ register(({ analytics, browser, settings, init }) => {
 
       if (!visitorId) {
         visitorId = `v_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
-        try {
-          await browser.cookie.set("cl_vid", visitorId);
-        } catch {}
+        await setPersistentCookie("cl_vid", visitorId);
       }
 
       // Load UTM cookie (persisted from previous page)
@@ -225,9 +234,7 @@ register(({ analytics, browser, settings, init }) => {
     }
 
     // Persist updated UTM data to cookie for the next page load
-    try {
-      await browser.cookie.set("cl_utm", encodeUtmCookie(utm));
-    } catch {}
+    await setPersistentCookie("cl_utm", encodeUtmCookie(utm));
 
     // Now send the event — utm object is fully populated
     await sendEvent("page_view", {
@@ -251,9 +258,7 @@ register(({ analytics, browser, settings, init }) => {
       utm.utmCampaign = urlUtms.utmCampaign || null;
       utm.utmContent = urlUtms.utmContent || null;
       utm.utmId = urlUtms.utmId || null;
-      try {
-        await browser.cookie.set("cl_utm", encodeUtmCookie(utm));
-      } catch {}
+      await setPersistentCookie("cl_utm", encodeUtmCookie(utm));
     }
 
     await sendEvent("cart_add", {
