@@ -62,13 +62,21 @@ async function detectBurstCluster(
   return { isBurst: true, variantId, peerIds: peers.map((p) => p.id) };
 }
 
-// Cache product images to avoid repeated API calls — capped at 500 entries (LRU-lite: evict oldest on overflow)
+// Cache product images to avoid repeated API calls — capped at 500 entries (LRU-lite: evict oldest on overflow).
+//
+// Entries carry a timestamp and expire after IMAGE_CACHE_TTL_MS. Without a TTL,
+// a changed product photo would never propagate: Shopify serves a NEW CDN URL
+// when the featured image changes, but an unbounded cache keeps stamping the old
+// URL onto every new cart_add event for the life of the process (until redeploy).
+// 10 minutes bounds that staleness while still absorbing bursty webhook traffic.
 const IMAGE_CACHE_MAX = 500;
-const imageCache = new Map<string, string | null>();
+const IMAGE_CACHE_TTL_MS = 10 * 60 * 1000;
+const imageCache = new Map<string, { url: string | null; ts: number }>();
 
 async function getProductImage(shop: string, productId: string): Promise<string | null> {
   const cacheKey = `${shop}:${productId}`;
-  if (imageCache.has(cacheKey)) return imageCache.get(cacheKey)!;
+  const cached = imageCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < IMAGE_CACHE_TTL_MS) return cached.url;
   if (imageCache.size >= IMAGE_CACHE_MAX) {
     // Delete the oldest entry (Map preserves insertion order)
     imageCache.delete(imageCache.keys().next().value!);
@@ -87,11 +95,11 @@ async function getProductImage(shop: string, productId: string): Promise<string 
     `, { variables: { id: `gid://shopify/Product/${productId}` } });
     const result = await response.json();
     const imageUrl = result?.data?.product?.featuredImage?.url || null;
-    imageCache.set(cacheKey, imageUrl);
+    imageCache.set(cacheKey, { url: imageUrl, ts: Date.now() });
     return imageUrl;
   } catch (e: any) {
     console.error(`[Webhook] Failed to fetch image for product ${productId}:`, e?.message || e);
-    imageCache.set(cacheKey, null);
+    imageCache.set(cacheKey, { url: null, ts: Date.now() });
     return null;
   }
 }

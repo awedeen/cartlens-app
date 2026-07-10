@@ -56,16 +56,30 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     take: 100,
   });
 
-  // Backfill missing product images
-  const eventsNeedingImages = sessions
-    .flatMap((s) => s.events)
-    .filter((e) => e.productId && !e.variantImage);
-  
-  const uniqueProductIds = [...new Set(eventsNeedingImages.map((e) => e.productId!))];
-  
-  if (uniqueProductIds.length > 0 && uniqueProductIds.length <= 20) {
+  // Refresh product images for the feed.
+  //
+  // A product photo captured on a past event (or cached at webhook time) goes
+  // stale the moment the merchant changes it: Shopify then serves a NEW CDN URL,
+  // so the stored one shows the old picture (or eventually 404s). The old logic
+  // only filled images that were MISSING, so a changed photo never updated.
+  //
+  // Instead, re-fetch the CURRENT featured image for every product shown and
+  // overwrite it — both in memory (immediate render) and in the DB where it
+  // actually changed. Bounded to keep the single Admin API call cheap; product
+  // count per page is small, and dashboard loads are infrequent.
+  const IMG_REFRESH_MAX = 100;
+  const displayedProductIds = [
+    ...new Set(
+      sessions
+        .flatMap((s) => s.events)
+        .map((e) => e.productId)
+        .filter((id): id is string => !!id)
+    ),
+  ].slice(0, IMG_REFRESH_MAX);
+
+  if (displayedProductIds.length > 0) {
     try {
-      const gids = uniqueProductIds.map((id) => `"gid://shopify/Product/${id}"`).join(", ");
+      const gids = displayedProductIds.map((id) => `"gid://shopify/Product/${id}"`).join(", ");
       const imgResponse = await admin.graphql(`
         query {
           nodes(ids: [${gids}]) {
@@ -87,16 +101,18 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         }
       }
 
-      // Update DB in batches — one updateMany per unique image URL instead of one update per event
+      // Apply fresh URLs; batch DB writes one updateMany per URL, and only for
+      // events whose stored image actually changed (a normal load writes nothing).
       const imageToEventIds = new Map<string, string[]>();
       for (const s of sessions) {
         for (const e of s.events) {
-          if (e.productId && !e.variantImage && imageMap.has(e.productId)) {
-            const url = imageMap.get(e.productId)!;
-            e.variantImage = url; // update in-memory immediately
-            if (!imageToEventIds.has(url)) imageToEventIds.set(url, []);
-            imageToEventIds.get(url)!.push(e.id);
-          }
+          if (!e.productId) continue;
+          const fresh = imageMap.get(e.productId);
+          if (!fresh) continue;              // product deleted / no image — keep what we have
+          if (e.variantImage === fresh) continue; // already current
+          e.variantImage = fresh;            // update in-memory immediately
+          if (!imageToEventIds.has(fresh)) imageToEventIds.set(fresh, []);
+          imageToEventIds.get(fresh)!.push(e.id);
         }
       }
       await Promise.all(
@@ -108,7 +124,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         )
       );
     } catch (imgErr) {
-      console.error("[Loader] Failed to fetch product images:", imgErr);
+      console.error("[Loader] Failed to refresh product images:", imgErr);
     }
   }
 
