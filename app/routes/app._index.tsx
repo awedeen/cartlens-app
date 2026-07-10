@@ -556,6 +556,14 @@ export default function Index() {
     return `${Math.floor(seconds / 86400)}d ago`;
   };
 
+  // The card's "time ago" should reflect real activity — the most recent event —
+  // not `updatedAt`, which auto-bumps on any DB write (late/redelivered webhooks,
+  // merge enrichment, cart-token reuse) and would misreport an old sale as recent.
+  // Events are loaded newest-first, so events[0] is the latest. Fall back to
+  // updatedAt only when a session somehow has no events.
+  const getLastActivity = (s: SessionWithEvents): string =>
+    (s.events?.[0]?.timestamp ?? s.updatedAt).toString();
+
   const getTimeInCart = (session: SessionWithEvents) => {
     const firstAdd = session.events?.find((e) => e.eventType === "cart_add");
     if (!firstAdd) return null;
@@ -1028,7 +1036,7 @@ export default function Index() {
                     )}
                     <span style={{ fontSize: "13px", color: "#6d7175" }}>•</span>
                     <span style={{ fontSize: "13px", color: "#6d7175" }}>
-                      {formatTimeAgo(selectedSession.updatedAt.toString())}
+                      {formatTimeAgo(getLastActivity(selectedSession))}
                     </span>
                   </div>
                 </div>
@@ -1454,7 +1462,7 @@ export default function Index() {
                               {st.label}
                             </span>
                             <span style={{ fontSize: "11px", color: "#919eab", whiteSpace: "nowrap" }}>
-                              {formatTimeAgo(session.updatedAt.toString())}{cartAge ? ` · ${cartAge} in cart` : ""}
+                              {formatTimeAgo(getLastActivity(session))}{cartAge ? ` · ${cartAge} in cart` : ""}
                             </span>
                           </div>
                         </div>
