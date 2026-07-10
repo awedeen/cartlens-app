@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type ReactNode } from "react";
 import { SaveBar } from "@shopify/app-bridge-react";
 import type {
   ActionFunctionArgs,
@@ -505,6 +505,40 @@ export default function Index() {
     return { color: "#e3e3e3", label: "Viewing" };
   };
 
+  // Rich status styling for the Live Carts cards. Converted/Checkout/Returned get
+  // a tinted card + a filled status pill so the funnel-advanced states pop; the
+  // early browsing/viewing states stay neutral so they don't compete for attention.
+  const getStatusStyle = (session: CartSession) => {
+    if (session.orderPlaced)
+      return { label: "Converted", tint: "#f1faf5", border: "#95c9b4", pillBg: "#007a5a", pillFg: "#ffffff" };
+    if (session.checkoutAbandoned)
+      return { label: "Returned", tint: "#fff4ec", border: "#e8a060", pillBg: "#c05c00", pillFg: "#ffffff" };
+    if (session.checkoutStarted)
+      return { label: "Checkout", tint: "#fdf9ed", border: "#e0c065", pillBg: "#b7891a", pillFg: "#ffffff" };
+    if (session.cartCreated)
+      return { label: "Browsing", tint: "#ffffff", border: "#e3e3e3", pillBg: "#f1f1f1", pillFg: "#4a4a4a" };
+    return { label: "Viewing", tint: "#ffffff", border: "#e3e3e3", pillBg: "#f6f6f7", pillFg: "#6d7175" };
+  };
+
+  // Best-effort human-readable traffic source. UTM wins; else the referrer host;
+  // else "Direct". Populated once the Web Pixel is live.
+  const getTrafficSource = (s: CartSession) => {
+    if (s.utmSource) return s.utmMedium ? `${s.utmSource} / ${s.utmMedium}` : s.utmSource;
+    if (s.referrerUrl) {
+      try {
+        return new URL(s.referrerUrl).hostname.replace(/^www\./, "");
+      } catch {
+        return s.referrerUrl;
+      }
+    }
+    return "Direct";
+  };
+
+  const getLocation = (s: CartSession) => {
+    const parts = [s.city, s.countryCode || s.country].filter(Boolean);
+    return parts.length ? parts.join(", ") : "Unknown";
+  };
+
   const getEventIcon = (eventType: string) => {
     switch (eventType) {
       case "cart_add":
@@ -560,6 +594,16 @@ export default function Index() {
         );
     }
   };
+
+  // Compact label/value cell for the Live Carts card details grid.
+  const DetailCell = ({ label, value }: { label: string; value: ReactNode }) => (
+    <div style={{ minWidth: 0 }}>
+      <div style={{ fontSize: "11px", color: "#8c9196", marginBottom: "2px" }}>{label}</div>
+      <div style={{ fontSize: "13px", color: "#202223", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        {value}
+      </div>
+    </div>
+  );
 
   const CollapsibleProducts = ({ session: s }: { session: SessionWithEvents }) => {
     const [expanded, setExpanded] = useState(false);
@@ -685,6 +729,7 @@ export default function Index() {
   const rCheckoutRate = reportsData?.checkoutRate ?? 0;
   const rCheckoutToOrderRate = reportsData?.checkoutToOrderRate ?? 0;
   const rTopProducts = reportsData?.topProducts ?? [];
+  const rLeakyProducts = reportsData?.leakyProducts ?? [];
   const rTopReferrers = reportsData?.topReferrers ?? [];
 
   // Live Carts filter — bots hidden by default, BUT never hide a session that
@@ -1175,26 +1220,21 @@ export default function Index() {
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
                   {visibleSessions.slice(0, 50).map((session) => {
-                    const status = getStatusBadge(session);
-                    const products = session.events
-                      ?.filter((e) => e.eventType === "cart_add")
-                      .map((e) => e.productTitle)
-                      .filter(Boolean)
-                      .filter((v, i, a) => a.indexOf(v) === i);
-                    const images = session.events
-                      ?.filter((e) => e.eventType === "cart_add" && e.variantImage)
-                      .map((e) => e.variantImage!)
-                      .filter((v, i, a) => a.indexOf(v) === i)
-                      .slice(0, 4);
-
+                    const st = getStatusStyle(session);
                     const isFlashing = flashIds.has(session.id);
+                    const netTotal = session.cartTotal - session.totalDiscounts;
+                    const cartAge = getTimeInCart(session);
+                    let discountCodes: any[] = [];
+                    try {
+                      discountCodes = session.discountCodes ? JSON.parse(session.discountCodes as string) : [];
+                    } catch { discountCodes = []; }
                     return (
                       <div
                         key={session.id}
                         onClick={() => setSelectedSession(session)}
                         style={{
-                          background: isFlashing ? "#fffbef" : "#ffffff",
-                          border: "1px solid #e3e3e3",
+                          background: isFlashing ? "#fffbef" : st.tint,
+                          border: `1px solid ${st.border}`,
                           borderRadius: "8px",
                           padding: "16px",
                           cursor: "pointer",
@@ -1202,110 +1242,83 @@ export default function Index() {
                           boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
                         }}
                         onMouseEnter={(e) => {
-                          e.currentTarget.style.background = "#f6f6f7";
-                          e.currentTarget.style.boxShadow = "0 2px 4px rgba(0,0,0,0.1)";
+                          e.currentTarget.style.boxShadow = "0 2px 6px rgba(0,0,0,0.12)";
                         }}
                         onMouseLeave={(e) => {
-                          e.currentTarget.style.background = "#ffffff";
                           e.currentTarget.style.boxShadow = "0 1px 2px rgba(0,0,0,0.05)";
                         }}
                       >
-                        {/* Card Header */}
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "4px", gap: "8px" }}>
-                          <div style={{ fontSize: "14px", fontWeight: 600, color: "#202223", minWidth: 0, display: "flex", alignItems: "center", gap: "6px" }}>
-                            <span>{getVisitorName(session)}</span>
+                        {/* Header: name + badges | status pill */}
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px", gap: "8px" }}>
+                          <div style={{ fontSize: "14px", fontWeight: 600, color: "#202223", minWidth: 0, display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                            <span>{session.customerName || "Anonymous Visitor"}</span>
                             {(session.visitNumber ?? 1) > 1 && (
-                              <span style={{
-                                fontSize: "11px",
-                                fontWeight: 600,
-                                color: "#916A00",
-                                background: "#FFF8E6",
-                                padding: "1px 6px",
-                                borderRadius: "3px",
-                                flexShrink: 0
-                              }}>
+                              <span style={{ fontSize: "11px", fontWeight: 600, color: "#916A00", background: "#FFF8E6", padding: "1px 6px", borderRadius: "3px", flexShrink: 0 }}>
                                 Visit #{session.visitNumber}
                               </span>
                             )}
                             {data.settings.highValueThreshold != null &&
                               session.cartTotal >= data.settings.highValueThreshold &&
                               session.cartTotal > 0 && (
-                              <span style={{
-                                fontSize: "11px",
-                                fontWeight: 600,
-                                color: "#ffffff",
-                                background: "#007a5a",
-                                padding: "1px 6px",
-                                borderRadius: "3px",
-                                flexShrink: 0
-                              }}>
+                              <span style={{ fontSize: "11px", fontWeight: 600, color: "#ffffff", background: "#007a5a", padding: "1px 6px", borderRadius: "3px", flexShrink: 0 }}>
                                 High Value
                               </span>
                             )}
                           </div>
-                          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "3px", flexShrink: 0 }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: "6px", whiteSpace: "nowrap" }}>
-                              <span style={{
-                                display: "inline-block",
-                                width: "8px",
-                                height: "8px",
-                                borderRadius: "50%",
-                                background: status.color,
-                                flexShrink: 0
-                              }} />
-                              <span style={{ fontSize: "12px", color: "#6d7175" }}>
-                                {status.label}
-                              </span>
-                              <span style={{ fontSize: "12px", color: "#919eab" }}>
-                                {formatTimeAgo(session.updatedAt.toString())}
-                              </span>
-                            </div>
-                            {getTimeInCart(session) && (
-                              <span style={{ fontSize: "11px", color: "#919eab" }}>
-                                {getTimeInCart(session)} in cart
-                              </span>
-                            )}
+                          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "4px", flexShrink: 0 }}>
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", background: st.pillBg, color: st.pillFg, fontSize: "12px", fontWeight: 600, padding: "3px 10px", borderRadius: "100px", whiteSpace: "nowrap" }}>
+                              {session.orderPlaced
+                                ? getEventIcon("checkout_completed")
+                                : session.checkoutStarted && !session.checkoutAbandoned
+                                  ? getEventIcon("checkout_started")
+                                  : null}
+                              {st.label}
+                            </span>
+                            <span style={{ fontSize: "11px", color: "#919eab", whiteSpace: "nowrap" }}>
+                              {formatTimeAgo(session.updatedAt.toString())}{cartAge ? ` · ${cartAge} in cart` : ""}
+                            </span>
                           </div>
                         </div>
-                        <div style={{ fontSize: "13px", color: session.itemCount === 0 ? "#d82c0d" : "#6d7175", marginBottom: "4px", display: "flex", alignItems: "center", gap: "6px" }}>
-                          <span>
-                            {session.itemCount === 0 ? "Cart emptied" : (
-                              <>
-                                {`${session.itemCount} ${session.itemCount === 1 ? "item" : "items"} · `}
-                                {session.totalDiscounts > 0 ? (
-                                  <>
-                                    <span style={{ textDecoration: "line-through", color: "#8c9196" }}>${session.cartTotal.toFixed(2)}</span>
-                                    <span style={{ marginLeft: "5px" }}>${(session.cartTotal - session.totalDiscounts).toFixed(2)}</span>
-                                  </>
-                                ) : (
-                                  `$${session.cartTotal.toFixed(2)}`
-                                )}
-                              </>
-                            )}
-                          </span>
-                          {(() => {
-                            try {
-                              const codes = session.discountCodes ? JSON.parse(session.discountCodes as string) : [];
-                              if (codes.length === 0) return null;
-                              return codes.map((dc: any, i: number) => (
-                                <span key={i} style={{
-                                  fontSize: "11px",
-                                  fontWeight: 600,
-                                  color: "#5C6AC4",
-                                  background: "#F4F5FA",
-                                  padding: "1px 6px",
-                                  borderRadius: "3px",
-                                  letterSpacing: "0.3px"
-                                }}>
-                                  {dc.code}
-                                </span>
-                              ));
-                            } catch { return null; }
-                          })()}
+
+                        {/* Email */}
+                        <div style={{ fontSize: "13px", color: session.customerEmail ? "#202223" : "#919eab", marginBottom: "12px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {session.customerEmail || "No email captured"}
                         </div>
-                        <div style={{ fontSize: "12px", color: "#919eab", marginBottom: "10px" }}>
-                          Created {new Date(session.createdAt.toString()).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: displayTimezone })}
+
+                        {/* Details grid — Source / Location / Cart / Items */}
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 16px", marginBottom: "12px" }}>
+                          <DetailCell label="Source" value={getTrafficSource(session)} />
+                          <DetailCell label="Location" value={getLocation(session)} />
+                          <DetailCell
+                            label="Cart"
+                            value={
+                              session.itemCount === 0 ? (
+                                <span style={{ color: "#d82c0d" }}>Emptied</span>
+                              ) : session.totalDiscounts > 0 ? (
+                                <>
+                                  <span style={{ textDecoration: "line-through", color: "#8c9196", marginRight: "4px" }}>
+                                    ${session.cartTotal.toFixed(2)}
+                                  </span>
+                                  ${netTotal.toFixed(2)}
+                                </>
+                              ) : (
+                                `$${session.cartTotal.toFixed(2)}`
+                              )
+                            }
+                          />
+                          <DetailCell label="Items" value={`${session.itemCount}`} />
                         </div>
+
+                        {/* Discount chips */}
+                        {discountCodes.length > 0 && (
+                          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "10px" }}>
+                            {discountCodes.map((dc: any, i: number) => (
+                              <span key={i} style={{ fontSize: "11px", fontWeight: 600, color: "#5C6AC4", background: "#F4F5FA", padding: "1px 6px", borderRadius: "3px", letterSpacing: "0.3px" }}>
+                                {dc.code}
+                              </span>
+                            ))}
+                          </div>
+                        )}
 
                         <CollapsibleProducts session={session} />
                       </div>
@@ -1463,11 +1476,21 @@ export default function Index() {
                     <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Cart adds</th>
                     <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Checkouts</th>
                     <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Orders</th>
+                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }} title="Of the sessions that reached checkout with this product, the share that placed an order. Low = losing sales at the final step.">Checkout→Order</th>
                     <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Conv. rate</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {rTopProducts.map((product, idx) => (
+                  {rTopProducts.map((product, idx) => {
+                    const leaky = product.checkouts >= 3 && product.checkoutToOrderRate < 40;
+                    const c2oColor = product.checkouts === 0
+                      ? "#8c9196"
+                      : leaky
+                        ? "#b23c00"
+                        : product.checkoutToOrderRate >= 60
+                          ? "#008060"
+                          : "#202223";
+                    return (
                     <tr key={product.productId} style={{ borderBottom: idx < rTopProducts.length - 1 ? "1px solid #f1f1f1" : "none" }}>
                       <td style={{ padding: "10px 16px", fontSize: "13px", fontWeight: 500, color: "#202223", maxWidth: "200px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {product.productTitle}
@@ -1481,15 +1504,72 @@ export default function Index() {
                       <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
                         {product.conversions}
                       </td>
+                      <td style={{ padding: "10px 16px", fontSize: "13px", color: c2oColor, textAlign: "right", fontWeight: leaky ? 700 : 500, fontVariantNumeric: "tabular-nums" }}>
+                        {product.checkouts > 0 ? `${product.checkoutToOrderRate.toFixed(0)}%` : "—"}
+                      </td>
                       <td style={{ padding: "10px 16px", fontSize: "13px", color: "#008060", textAlign: "right", fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>
                         {product.conversionRate.toFixed(1)}%
+                      </td>
+                    </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {/* Losing Sales at Checkout — products that reach checkout often but rarely convert */}
+          {rLeakyProducts.length > 0 && (
+            <div style={{
+              background: "#ffffff",
+              border: "1px solid #f0d9b5",
+              borderRadius: "8px",
+              overflowX: "auto",
+              marginBottom: "20px",
+              boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
+            }}>
+              <div style={{ padding: "16px 16px 4px" }}>
+                <h3 style={{ fontSize: "15px", fontWeight: 600, color: "#202223", margin: 0 }}>
+                  Losing Sales at Checkout
+                </h3>
+                <div style={{ fontSize: "12px", color: "#8c6a1a", marginTop: "4px" }}>
+                  These reach checkout often but rarely convert — a common sign of shipping cost, tax, or payment friction at the final step.
+                </div>
+              </div>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ borderTop: "1px solid #e3e3e3", borderBottom: "1px solid #e3e3e3" }}>
+                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "left" }}>Product</th>
+                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Checkouts</th>
+                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Orders</th>
+                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Lost</th>
+                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Kept</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rLeakyProducts.map((product, idx) => (
+                    <tr key={product.productId} style={{ borderBottom: idx < rLeakyProducts.length - 1 ? "1px solid #f1f1f1" : "none" }}>
+                      <td style={{ padding: "10px 16px", fontSize: "13px", fontWeight: 500, color: "#202223", maxWidth: "220px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {product.productTitle}
+                      </td>
+                      <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                        {product.checkouts}
+                      </td>
+                      <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                        {product.conversions}
+                      </td>
+                      <td style={{ padding: "10px 16px", fontSize: "13px", color: "#b23c00", textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+                        {product.lost}
+                      </td>
+                      <td style={{ padding: "10px 16px", fontSize: "13px", color: "#8c6a1a", textAlign: "right", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
+                        {product.checkoutToOrderRate.toFixed(0)}%
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            )}
-          </div>
+            </div>
+          )}
 
           {/* Top Referrers */}
           <div style={{

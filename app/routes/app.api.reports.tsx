@@ -25,6 +25,19 @@ export interface ReportsTopProduct {
   checkouts: number;
   conversions: number;
   conversionRate: number;
+  /** conversions / checkouts — how well a product closes once it reaches checkout. */
+  checkoutToOrderRate: number;
+}
+
+/** A product that lots of shoppers carry into checkout but few actually buy. */
+export interface ReportsLeakyProduct {
+  productId: string;
+  productTitle: string;
+  checkouts: number;
+  conversions: number;
+  /** checkouts − conversions: sessions that reached checkout with this item but didn't buy. */
+  lost: number;
+  checkoutToOrderRate: number;
 }
 
 export interface ReportsTopReferrer {
@@ -46,6 +59,7 @@ export interface ReportsData {
   checkoutRate: number;
   checkoutToOrderRate: number;
   topProducts: ReportsTopProduct[];
+  leakyProducts: ReportsLeakyProduct[];
   topReferrers: ReportsTopReferrer[];
 }
 
@@ -67,6 +81,7 @@ interface ProductCartRow {
 interface ProductCheckoutRow {
   productId: string;
   checkouts: bigint;
+  checkoutConversions: bigint;
 }
 interface ReferrerRow {
   referrer: string;
@@ -157,8 +172,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     if (productIds.length > 0) {
       checkoutRows = await prisma.$queryRaw<ProductCheckoutRow[]>`
         SELECT
-          e."productId"                                  AS "productId",
-          COUNT(DISTINCT e."sessionId")::bigint          AS checkouts
+          e."productId"                                                              AS "productId",
+          COUNT(DISTINCT e."sessionId")::bigint                                       AS checkouts,
+          (COUNT(DISTINCT e."sessionId") FILTER (WHERE s."orderPlaced" = true))::bigint AS "checkoutConversions"
         FROM "CartEvent" e
         INNER JOIN "CartSession" s ON s.id = e."sessionId"
         WHERE s."shopId" = ${shop.id}
@@ -175,22 +191,49 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         GROUP BY e."productId"
       `;
     }
-    const checkoutByProduct = new Map<string, number>(
-      checkoutRows.map((r) => [r.productId, Number(r.checkouts)])
+    // Per-product checkout funnel: how many distinct sessions reached checkout
+    // with this item, and how many of those converted.
+    const checkoutByProduct = new Map<string, { checkouts: number; conversions: number }>(
+      checkoutRows.map((r) => [
+        r.productId,
+        { checkouts: Number(r.checkouts), conversions: Number(r.checkoutConversions) },
+      ])
     );
 
     const topProducts: ReportsTopProduct[] = productCartRows.map((row) => {
       const cartAdds = Number(row.cartAdds);
       const conversions = Number(row.conversions);
+      const co = checkoutByProduct.get(row.productId) ?? { checkouts: 0, conversions: 0 };
       return {
         productId: row.productId,
         productTitle: row.productTitle || "Unknown",
         cartAdds,
-        checkouts: checkoutByProduct.get(row.productId) ?? 0,
+        checkouts: co.checkouts,
         conversions,
         conversionRate: cartAdds > 0 ? (conversions / cartAdds) * 100 : 0,
+        checkoutToOrderRate: co.checkouts > 0 ? (co.conversions / co.checkouts) * 100 : 0,
       };
     });
+
+    // Leaky products — reached checkout often but rarely bought. Derived from the
+    // same per-product checkout funnel: require a meaningful sample (>= 3
+    // checkouts) and surface the ones losing the most sales at the final step.
+    const LEAKY_MIN_CHECKOUTS = 3;
+    const titleByProduct = new Map<string, string>(
+      productCartRows.map((r) => [r.productId, r.productTitle || "Unknown"])
+    );
+    const leakyProducts: ReportsLeakyProduct[] = Array.from(checkoutByProduct.entries())
+      .map(([productId, co]) => ({
+        productId,
+        productTitle: titleByProduct.get(productId) || "Unknown",
+        checkouts: co.checkouts,
+        conversions: co.conversions,
+        lost: co.checkouts - co.conversions,
+        checkoutToOrderRate: co.checkouts > 0 ? (co.conversions / co.checkouts) * 100 : 0,
+      }))
+      .filter((p) => p.checkouts >= LEAKY_MIN_CHECKOUTS && p.lost > 0)
+      .sort((a, b) => b.lost - a.lost || a.checkoutToOrderRate - b.checkoutToOrderRate)
+      .slice(0, 10);
 
     // --- 4. Top referrers ---
     const referrerRows = await prisma.$queryRaw<ReferrerRow[]>`
@@ -236,6 +279,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       checkoutRate: totalCarts > 0 ? (totalCheckouts / totalCarts) * 100 : 0,
       checkoutToOrderRate: totalCheckouts > 0 ? (totalOrders / totalCheckouts) * 100 : 0,
       topProducts,
+      leakyProducts,
       topReferrers,
     };
 
