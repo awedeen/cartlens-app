@@ -24,6 +24,7 @@ interface LoaderData {
     timezone: string;
     botFilterEnabled: boolean;
     highValueThreshold: number | null;
+    dataResetAt: string | null;
   };
 }
 
@@ -46,9 +47,14 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   // Get recent sessions (last 100). Exclude merged pixel shadows — their
   // marketing data now lives on the canonical cart_token session, so showing
-  // them would duplicate the shopper in the feed.
+  // them would duplicate the shopper in the feed. Respect the "start fresh"
+  // reset point when set.
   const sessions = await prisma.cartSession.findMany({
-    where: { shopId: shop.id, mergedInto: null },
+    where: {
+      shopId: shop.id,
+      mergedInto: null,
+      ...(shop.dataResetAt ? { createdAt: { gte: shop.dataResetAt } } : {}),
+    },
     include: {
       events: {
         orderBy: { timestamp: "desc" },
@@ -205,6 +211,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       timezone: shop.timezone,
       botFilterEnabled: shop.botFilterEnabled,
       highValueThreshold: shop.highValueThreshold,
+      dataResetAt: shop.dataResetAt ? shop.dataResetAt.toISOString() : null,
     },
   });
 };
@@ -267,6 +274,28 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     }
   }
 
+  if (action === "resetData") {
+    // Non-destructive "start fresh": stamp a reset point. All views only consider
+    // sessions created at/after it. Rows are kept — restore clears the marker.
+    try {
+      await prisma.shop.update({ where: { id: shop.id }, data: { dataResetAt: new Date() } });
+      return data({ success: true });
+    } catch (e: any) {
+      console.error("[Reset Data] Error:", e);
+      return data({ success: false, error: "Failed to clear data. Please try again." });
+    }
+  }
+
+  if (action === "restoreData") {
+    try {
+      await prisma.shop.update({ where: { id: shop.id }, data: { dataResetAt: null } });
+      return data({ success: true });
+    } catch (e: any) {
+      console.error("[Restore Data] Error:", e);
+      return data({ success: false, error: "Failed to restore data. Please try again." });
+    }
+  }
+
   if (action === "updateSettings") {
     try {
       const timezone = formData.get("timezone") as string;
@@ -297,6 +326,11 @@ export default function Index() {
   // Reports tab fetches its own aggregations server-side from /app/api/reports
   // so it isn't limited to the 100-session dashboard cap.
   const reportsFetcher = useFetcher<ReportsData | { error: string }>();
+  // "Start fresh" reset/restore. dataResetAt (from the loader) reflects the
+  // current reset point; the loader revalidates after the action so the label
+  // updates, and we re-pull reports so the numbers reflect the new window.
+  const dataFetcher = useFetcher<{ success?: boolean; error?: string }>();
+  const dataResetAt = data.settings.dataResetAt;
   const [activeTab, setActiveTab] = useState<"live" | "reports" | "settings">("live");
   const [sessions, setSessions] = useState<SessionWithMeta[]>(data.sessions);
   const [selectedSession, setSelectedSession] = useState<SessionWithMeta | null>(null);
@@ -455,6 +489,25 @@ export default function Index() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, reportRange]);
 
+  // After a data reset/restore succeeds, re-pull the reports for the active range
+  // so the numbers immediately reflect the new window.
+  useEffect(() => {
+    if (dataFetcher.state === "idle" && dataFetcher.data?.success && activeTab === "reports") {
+      reportsFetcher.load(`/app/api/reports?range=${reportRange}`);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataFetcher.state, dataFetcher.data]);
+
+  const handleResetData = () => {
+    if (!window.confirm(
+      "Clear your dashboard and start fresh?\n\nThis hides all existing cart activity from your Live feed and Reports. It does NOT delete anything — you can restore it anytime."
+    )) return;
+    dataFetcher.submit({ action: "resetData" }, { method: "POST" });
+  };
+  const handleRestoreData = () => {
+    dataFetcher.submit({ action: "restoreData" }, { method: "POST" });
+  };
+
   const formatTimeAgo = (date: string) => {
     const now = new Date();
     const past = new Date(date);
@@ -545,6 +598,28 @@ export default function Index() {
   const getLocation = (s: CartSession) => {
     const parts = [s.city, s.countryCode || s.country].filter(Boolean);
     return parts.length ? parts.join(", ") : "Unknown";
+  };
+
+  // Human-readable duration for journey dwell times.
+  const formatDuration = (seconds: number) => {
+    if (seconds < 1) return "0s";
+    if (seconds < 60) return `${Math.round(seconds)}s`;
+    const m = Math.floor(seconds / 60);
+    const s = Math.round(seconds % 60);
+    if (m < 60) return s > 0 ? `${m}m ${s}s` : `${m}m`;
+    const h = Math.floor(m / 60);
+    return `${h}h ${m % 60}m`;
+  };
+
+  // Show the path (+ query) rather than the full URL — cleaner in the journey.
+  const getPagePath = (url: string | null | undefined) => {
+    if (!url) return "";
+    try {
+      const u = new URL(url);
+      return u.pathname + (u.search || "");
+    } catch {
+      return url;
+    }
   };
 
   const getEventIcon = (eventType: string) => {
@@ -1014,91 +1089,94 @@ export default function Index() {
                   })()}
                 </div>
 
-                {/* Session Timeline */}
+                {/* Customer Journey */}
                 <div>
                   <h3 style={{ fontSize: "16px", fontWeight: 600, color: "#202223", marginBottom: "12px" }}>
-                    Session Timeline
+                    Customer Journey
                   </h3>
-                  <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                    {selectedSession.events.map((event) => {
-                        const isConversion = event.eventType === "checkout_completed";
-                        const isCheckout = event.eventType === "checkout_started" || event.eventType === "checkout_item";
-                        const isAbandoned = event.eventType === "checkout_abandoned";
-                        const rowBg = isConversion ? "#f1faf5" : isAbandoned ? "#fff4ec" : isCheckout ? "#fdf9ed" : "#ffffff";
-                        const rowBorder = isConversion ? "1px solid #95c9b4" : isAbandoned ? "1px solid #e8a060" : isCheckout ? "1px solid #e0c065" : "1px solid #e3e3e3";
-                        const iconBg = isConversion ? "#007a5a" : isAbandoned ? "#c05c00" : isCheckout ? "#b7891a" : "#ffffff";
-                        const iconColor = (isConversion || isCheckout || isAbandoned) ? "#ffffff" : "#202223";
-                        const iconBorder = isConversion ? "1px solid #007a5a" : isAbandoned ? "1px solid #c05c00" : isCheckout ? "1px solid #b7891a" : "1px solid #e3e3e3";
-                        return (
-                      <div
-                        key={event.id}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "12px",
-                          padding: "12px",
-                          background: rowBg,
-                          borderRadius: "4px",
-                          border: rowBorder,
-                          animation: "clFade 0.4s ease"
-                        }}
-                      >
-                        <div style={{
-                          width: "28px",
-                          height: "28px",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          background: iconBg,
-                          border: iconBorder,
-                          borderRadius: "4px",
-                          fontSize: "16px",
-                          fontWeight: 700,
-                          flexShrink: 0,
-                          color: iconColor
-                        }}>
-                          {getEventIcon(event.eventType)}
+                  {(() => {
+                    // Chronological (first → last) so the journey reads as a story.
+                    const evs = [...selectedSession.events].sort(
+                      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+                    );
+                    // Dwell = time until the NEXT step. The last event has no next,
+                    // so its dwell is unknown (we can't detect page unload reliably).
+                    const dwell = new Map<string, number>();
+                    for (let i = 0; i < evs.length - 1; i++) {
+                      dwell.set(
+                        evs[i].id,
+                        (new Date(evs[i + 1].timestamp).getTime() - new Date(evs[i].timestamp).getTime()) / 1000,
+                      );
+                    }
+                    const pageCount = evs.filter((e) => e.eventType === "page_view").length;
+                    const totalSecs =
+                      evs.length > 1
+                        ? (new Date(evs[evs.length - 1].timestamp).getTime() - new Date(evs[0].timestamp).getTime()) / 1000
+                        : 0;
+                    return (
+                      <>
+                        {/* Journey summary — entry + how they moved */}
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 16px", fontSize: "13px", color: "#6d7175", marginBottom: "12px", padding: "10px 12px", background: "#f6f6f7", borderRadius: "4px" }}>
+                          <span><strong style={{ color: "#202223" }}>{pageCount}</strong> page{pageCount === 1 ? "" : "s"} viewed</span>
+                          {totalSecs > 0 && <span><strong style={{ color: "#202223" }}>{formatDuration(totalSecs)}</strong> on site</span>}
+                          <span>from <strong style={{ color: "#202223" }}>{getTrafficSource(selectedSession)}</strong></span>
+                          {selectedSession.landingPage && (
+                            <span>landed on <strong style={{ color: "#202223" }}>{getPagePath(selectedSession.landingPage)}</strong></span>
+                          )}
                         </div>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontSize: "12px", color: "#6d7175", marginBottom: "4px" }}>
-                            {new Date(event.timestamp).toLocaleTimeString(undefined, { timeZone: displayTimezone })}
-                          </div>
-                          <div style={{ fontSize: "14px", color: "#202223" }}>
-                            {event.eventType === "cart_add" && (
-                              <>
-                                Added {event.productTitle}
-                                {event.variantTitle && ` - ${event.variantTitle}`}
-                                {event.quantity && ` (${event.quantity}x)`}
-                                {event.price && ` — $${event.price.toFixed(2)}`}
-                              </>
-                            )}
-                            {event.eventType === "cart_remove" && (
-                              <>
-                                Removed {event.productTitle}
-                                {event.variantTitle && ` - ${event.variantTitle}`}
-                              </>
-                            )}
-                            {event.eventType === "page_view" && (
-                              <>Viewed {event.pageUrl}</>
-                            )}
-                            {event.eventType === "checkout_started" && "Checkout started"}
-                            {event.eventType === "checkout_item" && (
-                              <>
-                                In checkout: {event.productTitle}
-                                {event.variantTitle && ` - ${event.variantTitle}`}
-                                {event.quantity && ` (${event.quantity}x)`}
-                                {event.price && ` — $${event.price.toFixed(2)}`}
-                              </>
-                            )}
-                            {event.eventType === "checkout_completed" && (
-                              <>Order placed{selectedSession.orderNumber ? ` — #${selectedSession.orderNumber}` : ""}</>
-                            )}
-                            {event.eventType === "checkout_abandoned" && "Left checkout — returned to browsing"}
-                          </div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                          {evs.map((event) => {
+                            const isConversion = event.eventType === "checkout_completed";
+                            const isCheckout = event.eventType === "checkout_started" || event.eventType === "checkout_item";
+                            const isAbandoned = event.eventType === "checkout_abandoned";
+                            const rowBg = isConversion ? "#f1faf5" : isAbandoned ? "#fff4ec" : isCheckout ? "#fdf9ed" : "#ffffff";
+                            const rowBorder = isConversion ? "1px solid #95c9b4" : isAbandoned ? "1px solid #e8a060" : isCheckout ? "1px solid #e0c065" : "1px solid #e3e3e3";
+                            const iconBg = isConversion ? "#007a5a" : isAbandoned ? "#c05c00" : isCheckout ? "#b7891a" : "#ffffff";
+                            const iconColor = (isConversion || isCheckout || isAbandoned) ? "#ffffff" : "#202223";
+                            const iconBorder = isConversion ? "1px solid #007a5a" : isAbandoned ? "1px solid #c05c00" : isCheckout ? "1px solid #b7891a" : "1px solid #e3e3e3";
+                            const dwellSecs = dwell.get(event.id);
+                            return (
+                              <div
+                                key={event.id}
+                                style={{ display: "flex", alignItems: "center", gap: "12px", padding: "12px", background: rowBg, borderRadius: "4px", border: rowBorder, animation: "clFade 0.4s ease" }}
+                              >
+                                <div style={{ width: "28px", height: "28px", display: "flex", alignItems: "center", justifyContent: "center", background: iconBg, border: iconBorder, borderRadius: "4px", fontSize: "16px", fontWeight: 700, flexShrink: 0, color: iconColor }}>
+                                  {getEventIcon(event.eventType)}
+                                </div>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontSize: "12px", color: "#6d7175", marginBottom: "4px", display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                                    <span>{new Date(event.timestamp).toLocaleTimeString(undefined, { timeZone: displayTimezone })}</span>
+                                    {event.eventType === "page_view" && dwellSecs !== undefined && dwellSecs >= 1 && (
+                                      <span style={{ color: "#919eab" }}>· spent {formatDuration(dwellSecs)}</span>
+                                    )}
+                                  </div>
+                                  <div style={{ fontSize: "14px", color: "#202223", overflow: "hidden", textOverflow: "ellipsis" }}>
+                                    {event.eventType === "cart_add" && (
+                                      <>Added {event.productTitle}{event.variantTitle && ` - ${event.variantTitle}`}{event.quantity ? ` (${event.quantity}x)` : ""}{event.price ? ` — $${event.price.toFixed(2)}` : ""}</>
+                                    )}
+                                    {event.eventType === "cart_remove" && (
+                                      <>Removed {event.productTitle}{event.variantTitle && ` - ${event.variantTitle}`}</>
+                                    )}
+                                    {event.eventType === "page_view" && (
+                                      <>Viewed <span style={{ fontWeight: 500 }}>{event.pageTitle || getPagePath(event.pageUrl) || "page"}</span>{event.pageTitle && event.pageUrl ? <span style={{ color: "#919eab" }}> · {getPagePath(event.pageUrl)}</span> : null}</>
+                                    )}
+                                    {event.eventType === "checkout_started" && "Checkout started"}
+                                    {event.eventType === "checkout_item" && (
+                                      <>In checkout: {event.productTitle}{event.variantTitle && ` - ${event.variantTitle}`}{event.quantity ? ` (${event.quantity}x)` : ""}{event.price ? ` — $${event.price.toFixed(2)}` : ""}</>
+                                    )}
+                                    {event.eventType === "checkout_completed" && (
+                                      <>Order placed{selectedSession.orderNumber ? ` — #${selectedSession.orderNumber}` : ""}</>
+                                    )}
+                                    {event.eventType === "checkout_abandoned" && "Left checkout — returned to browsing"}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
-                      </div>
-                    ); })}
-                  </div>
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
@@ -1397,7 +1475,9 @@ export default function Index() {
             <span style={{ fontSize: "12px", color: "#9ca3af" }}>
               {reportsFirstLoading
                 ? "Loading…"
-                : `Based on ${rTotalSessions.toLocaleString()} session${rTotalSessions !== 1 ? "s" : ""} in the last ${reportRange} days`}
+                : dataResetAt
+                  ? `Based on ${rTotalSessions.toLocaleString()} session${rTotalSessions !== 1 ? "s" : ""} since reset`
+                  : `Based on ${rTotalSessions.toLocaleString()} session${rTotalSessions !== 1 ? "s" : ""} in the last ${reportRange} days`}
               {reportsData && reportsFetcher.state === "loading" && " · refreshing…"}
             </span>
             <div style={{ display: "flex", border: "1px solid #e3e3e3", borderRadius: "6px", overflow: "hidden" }}>
@@ -1421,6 +1501,34 @@ export default function Index() {
               ))}
             </div>
           </div>
+
+          {/* Start-fresh / clear-data control (non-destructive reset) */}
+          <div style={{ display: "flex", justifyContent: dataResetAt ? "space-between" : "flex-end", alignItems: "center", marginBottom: "16px", gap: "12px", flexWrap: "wrap" }}>
+            {dataResetAt && (
+              <span style={{ fontSize: "12px", color: "#8c6a1a", background: "#fff8e6", border: "1px solid #f0d9b5", borderRadius: "4px", padding: "4px 10px" }}>
+                Fresh start on {new Date(dataResetAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: displayTimezone })}
+                {" · "}
+                <button
+                  onClick={handleRestoreData}
+                  disabled={dataFetcher.state !== "idle"}
+                  style={{ background: "none", border: "none", color: "#008060", fontWeight: 600, cursor: dataFetcher.state === "idle" ? "pointer" : "not-allowed", padding: 0, fontSize: "12px" }}
+                >
+                  Restore all data
+                </button>
+              </span>
+            )}
+            <button
+              onClick={handleResetData}
+              disabled={dataFetcher.state !== "idle"}
+              title="Hide all existing activity and start fresh. Non-destructive — nothing is deleted and you can restore anytime."
+              style={{ background: "#ffffff", border: "1px solid #e3e3e3", borderRadius: "6px", padding: "6px 12px", fontSize: "13px", color: "#6d7175", cursor: dataFetcher.state === "idle" ? "pointer" : "not-allowed", whiteSpace: "nowrap" }}
+            >
+              {dataFetcher.state !== "idle" ? "Working…" : "Clear data (start fresh)"}
+            </button>
+          </div>
+          {dataFetcher.data && dataFetcher.data.success === false && dataFetcher.data.error && (
+            <div style={{ fontSize: "12px", color: "#d82c0d", marginBottom: "12px" }}>{dataFetcher.data.error}</div>
+          )}
 
           {/* Summary Cards */}
           <div style={{

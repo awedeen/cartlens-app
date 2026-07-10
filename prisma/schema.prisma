@@ -44,6 +44,10 @@ model Shop {
   retentionDays   Int      @default(90)
   highValueThreshold Float?
   botFilterEnabled Boolean @default(false)
+  // "Start fresh" marker. When set, the dashboard, Reports, and CSV export only
+  // consider sessions created at/after this time — a non-destructive reset that
+  // hides prior activity without deleting rows (clear it to restore everything).
+  dataResetAt     DateTime?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 

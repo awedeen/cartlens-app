@@ -56,6 +56,15 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       };
     }
 
+    // Honor the "start fresh" reset point — never export pre-reset rows, and let
+    // it tighten (not loosen) any requested start date.
+    if (shop.dataResetAt) {
+      const existing = (where.createdAt as Prisma.DateTimeFilter) || {};
+      const currentGte = existing.gte instanceof Date ? existing.gte : null;
+      const gte = currentGte && currentGte > shop.dataResetAt ? currentGte : shop.dataResetAt;
+      where.createdAt = { ...existing, gte };
+    }
+
     // Fetch sessions — cap at 10,000 rows to prevent OOM on large stores
     const sessions = await prisma.cartSession.findMany({
       where,
