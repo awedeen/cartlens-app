@@ -11,6 +11,24 @@ import { detectBot } from "../services/bot.server";
 import sseManager from "../services/sse.server";
 import { checkRateLimit, sanitizeString } from "../utils/security.server";
 
+// The Web Pixel runs on the storefront domain and POSTs to this app on a
+// DIFFERENT domain with a JSON content-type — a cross-origin request. The
+// browser first sends a CORS preflight OPTIONS and only sends the real POST if
+// it succeeds, and it will only expose the POST response to the pixel if the
+// response also carries these headers. Origin "*" is safe here: the endpoint is
+// already public and gated by shop-domain validation + per-IP rate limiting,
+// not by origin. Without this, every pixel event is silently blocked.
+const CORS_HEADERS: Record<string, string> = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Max-Age": "86400",
+};
+
+// Handles the CORS preflight OPTIONS (React Router routes it to the loader).
+export const loader = async () =>
+  new Response(null, { status: 204, headers: CORS_HEADERS });
+
 function parseUserAgent(ua: string | null): { browser: string | null; os: string | null } {
   if (!ua) return { browser: null, os: null };
 
@@ -35,7 +53,7 @@ function parseUserAgent(ua: string | null): { browser: string | null; os: string
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   if (request.method !== "POST") {
-    return data({ error: "Method not allowed" }, { status: 405 });
+    return data({ error: "Method not allowed" }, { status: 405, headers: CORS_HEADERS });
   }
 
   // Rate limit by IP — 120 requests/minute covers normal pixel activity.
@@ -47,7 +65,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
     "unknown";
   if (!checkRateLimit(clientIp, 120, 60_000)) {
-    return data({ error: "Too many requests" }, { status: 429 });
+    return data({ error: "Too many requests" }, { status: 429, headers: CORS_HEADERS });
   }
 
   try {
@@ -106,7 +124,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     // Validate required fields
     if (!safeShopDomain || !safeVisitorId || !eventType) {
-      return data({ error: "Missing required fields: shopDomain, visitorId, eventType" }, { status: 400 });
+      return data({ error: "Missing required fields: shopDomain, visitorId, eventType" }, { status: 400, headers: CORS_HEADERS });
     }
 
     // Basic origin validation — referer header is optional and stripped by some browsers/extensions
@@ -118,7 +136,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     if (!session) {
       console.warn(`[Public API] Invalid shop domain: ${safeShopDomain}`);
-      return data({ error: "Invalid shop" }, { status: 403 });
+      return data({ error: "Invalid shop" }, { status: 403, headers: CORS_HEADERS });
     }
 
     // Find or create Shop record — upsert is race-condition-safe
@@ -291,9 +309,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       session: sessionWithEvents,
     });
 
-    return data({ success: true, sessionId: cartSession.id, eventId: event.id });
+    return data({ success: true, sessionId: cartSession.id, eventId: event.id }, { headers: CORS_HEADERS });
   } catch (error) {
     console.error("[Public API Events] Error:", error);
-    return data({ error: "Internal server error" }, { status: 500 });
+    return data({ error: "Internal server error" }, { status: 500, headers: CORS_HEADERS });
   }
 };
