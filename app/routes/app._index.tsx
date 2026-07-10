@@ -602,7 +602,9 @@ export default function Index() {
     const renderRow = (item: any, i: number) => (
       <div key={i} style={{ display: "flex", alignItems: "center", gap: "8px", opacity: item.removed ? 0.5 : 1 }}>
         {item.variantImage ? (
-          <img src={item.variantImage} alt="" style={{ width: "32px", height: "32px", objectFit: "cover", borderRadius: "4px", border: "1px solid #e3e3e3", flexShrink: 0 }} />
+          // objectFit "contain" preserves the listing photo's real aspect ratio
+          // (letterboxed in the square box) instead of cropping it to a square.
+          <img src={item.variantImage} alt="" style={{ width: "32px", height: "32px", objectFit: "contain", background: "#ffffff", borderRadius: "4px", border: "1px solid #e3e3e3", flexShrink: 0 }} />
         ) : (
           <div style={{ width: "32px", height: "32px", borderRadius: "4px", border: "1px solid #e3e3e3", background: "#f6f6f7", flexShrink: 0 }} />
         )}
