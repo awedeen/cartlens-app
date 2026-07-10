@@ -53,15 +53,26 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   //   - visits = un-converted pixel sessions ("v_…", no orderId) — hidden by
   //              default, revealed by the "Show visitors" toggle, so we only need
   //              a recent slice of them.
-  // Both exclude merged shadows and respect the "start fresh" reset point.
+  // NOTE: the Live feed intentionally does NOT apply the "start fresh"
+  // (dataResetAt) cutoff — it's a real-time operational view and the SSE path
+  // can't apply the cutoff either, so filtering it here made carts flash live and
+  // vanish on refresh. The reset applies to Reports + CSV export only.
   const feedBaseWhere = {
     shopId: shop.id,
     mergedInto: null,
-    ...(shop.dataResetAt ? { createdAt: { gte: shop.dataResetAt } } : {}),
   };
   const [cartSessions, visitSessions] = await Promise.all([
     prisma.cartSession.findMany({
-      where: { ...feedBaseWhere, NOT: { visitorId: { startsWith: "v_" }, orderId: null } },
+      where: {
+        ...feedBaseWhere,
+        // A cart = a webhook session (not "v_") OR a converted pixel session.
+        // Explicit OR avoids any Prisma NOT-with-null ambiguity so un-converted
+        // webhook carts always load.
+        OR: [
+          { visitorId: { not: { startsWith: "v_" } } },
+          { orderId: { not: null } },
+        ],
+      },
       include: { events: { orderBy: { timestamp: "desc" } } },
       orderBy: { updatedAt: "desc" },
       take: 150,
@@ -526,7 +537,7 @@ export default function Index() {
 
   const handleResetData = () => {
     if (!window.confirm(
-      "Clear your dashboard and start fresh?\n\nThis hides all existing cart activity from your Live feed and Reports. It does NOT delete anything — you can restore it anytime."
+      "Reset your Reports and start fresh?\n\nThis makes Reports and CSV exports only count activity from now on. Your live feed keeps showing recent carts. Nothing is deleted — you can restore anytime."
     )) return;
     dataFetcher.submit({ action: "resetData" }, { method: "POST" });
   };
@@ -1558,7 +1569,7 @@ export default function Index() {
             <button
               onClick={handleResetData}
               disabled={dataFetcher.state !== "idle"}
-              title="Hide all existing activity and start fresh. Non-destructive — nothing is deleted and you can restore anytime."
+              title="Reset Reports + exports to count only activity from now on. Your live feed is unaffected. Non-destructive — nothing is deleted and you can restore anytime."
               style={{ background: "#ffffff", border: "1px solid #e3e3e3", borderRadius: "6px", padding: "6px 12px", fontSize: "13px", color: "#6d7175", cursor: dataFetcher.state === "idle" ? "pointer" : "not-allowed", whiteSpace: "nowrap" }}
             >
               {dataFetcher.state !== "idle" ? "Working…" : "Clear data (start fresh)"}
