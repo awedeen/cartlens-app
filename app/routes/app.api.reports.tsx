@@ -111,6 +111,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     }
 
     const cutoff = new Date(Date.now() - range * 24 * 60 * 60 * 1000);
+    // "Start fresh" reset point wins when it's more recent than the range window,
+    // so a reset immediately narrows every report to post-reset activity.
+    const since = shop.dataResetAt && shop.dataResetAt > cutoff ? shop.dataResetAt : cutoff;
 
     // --- 1. Summary aggregates (single round-trip) ---
     const summaryRows = await prisma.$queryRaw<SummaryRow[]>`
@@ -123,7 +126,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         COALESCE(AVG("cartTotal")  FILTER (WHERE "cartCreated" = true), 0)::float           AS "avgCartValue"
       FROM "CartSession"
       WHERE "shopId" = ${shop.id}
-        AND "createdAt" >= ${cutoff}
+        AND "createdAt" >= ${since}
         AND "mergedInto" IS NULL
         -- Pixel visit sessions ("v_…") are counted ONLY when they actually
         -- converted (accelerated checkout landed on them). Un-converted pixel
@@ -156,7 +159,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       FROM "CartEvent" e
       INNER JOIN "CartSession" s ON s.id = e."sessionId"
       WHERE s."shopId" = ${shop.id}
-        AND s."createdAt" >= ${cutoff}
+        AND s."createdAt" >= ${since}
         AND s."mergedInto" IS NULL
         AND NOT (s."visitorId" LIKE 'v_%' AND s."orderPlaced" = false)
         AND (
@@ -184,7 +187,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         FROM "CartEvent" e
         INNER JOIN "CartSession" s ON s.id = e."sessionId"
         WHERE s."shopId" = ${shop.id}
-          AND s."createdAt" >= ${cutoff}
+          AND s."createdAt" >= ${since}
           AND s."mergedInto" IS NULL
           AND NOT (s."visitorId" LIKE 'v_%' AND s."orderPlaced" = false)
           AND (
@@ -251,7 +254,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         (COUNT(*) FILTER (WHERE "orderPlaced" = true))::bigint                    AS conversions
       FROM "CartSession"
       WHERE "shopId" = ${shop.id}
-        AND "createdAt" >= ${cutoff}
+        AND "createdAt" >= ${since}
         AND "mergedInto" IS NULL
         AND (
           "isSuspectedBot" = false

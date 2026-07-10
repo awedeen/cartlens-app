@@ -24,6 +24,7 @@ interface LoaderData {
     timezone: string;
     botFilterEnabled: boolean;
     highValueThreshold: number | null;
+    dataResetAt: string | null;
   };
 }
 
@@ -46,9 +47,14 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   // Get recent sessions (last 100). Exclude merged pixel shadows — their
   // marketing data now lives on the canonical cart_token session, so showing
-  // them would duplicate the shopper in the feed.
+  // them would duplicate the shopper in the feed. Respect the "start fresh"
+  // reset point when set.
   const sessions = await prisma.cartSession.findMany({
-    where: { shopId: shop.id, mergedInto: null },
+    where: {
+      shopId: shop.id,
+      mergedInto: null,
+      ...(shop.dataResetAt ? { createdAt: { gte: shop.dataResetAt } } : {}),
+    },
     include: {
       events: {
         orderBy: { timestamp: "desc" },
@@ -205,6 +211,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       timezone: shop.timezone,
       botFilterEnabled: shop.botFilterEnabled,
       highValueThreshold: shop.highValueThreshold,
+      dataResetAt: shop.dataResetAt ? shop.dataResetAt.toISOString() : null,
     },
   });
 };
@@ -267,6 +274,28 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     }
   }
 
+  if (action === "resetData") {
+    // Non-destructive "start fresh": stamp a reset point. All views only consider
+    // sessions created at/after it. Rows are kept — restore clears the marker.
+    try {
+      await prisma.shop.update({ where: { id: shop.id }, data: { dataResetAt: new Date() } });
+      return data({ success: true });
+    } catch (e: any) {
+      console.error("[Reset Data] Error:", e);
+      return data({ success: false, error: "Failed to clear data. Please try again." });
+    }
+  }
+
+  if (action === "restoreData") {
+    try {
+      await prisma.shop.update({ where: { id: shop.id }, data: { dataResetAt: null } });
+      return data({ success: true });
+    } catch (e: any) {
+      console.error("[Restore Data] Error:", e);
+      return data({ success: false, error: "Failed to restore data. Please try again." });
+    }
+  }
+
   if (action === "updateSettings") {
     try {
       const timezone = formData.get("timezone") as string;
@@ -297,6 +326,11 @@ export default function Index() {
   // Reports tab fetches its own aggregations server-side from /app/api/reports
   // so it isn't limited to the 100-session dashboard cap.
   const reportsFetcher = useFetcher<ReportsData | { error: string }>();
+  // "Start fresh" reset/restore. dataResetAt (from the loader) reflects the
+  // current reset point; the loader revalidates after the action so the label
+  // updates, and we re-pull reports so the numbers reflect the new window.
+  const dataFetcher = useFetcher<{ success?: boolean; error?: string }>();
+  const dataResetAt = data.settings.dataResetAt;
   const [activeTab, setActiveTab] = useState<"live" | "reports" | "settings">("live");
   const [sessions, setSessions] = useState<SessionWithMeta[]>(data.sessions);
   const [selectedSession, setSelectedSession] = useState<SessionWithMeta | null>(null);
@@ -454,6 +488,25 @@ export default function Index() {
     // reportsFetcher identity is stable across renders — intentionally omitted.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, reportRange]);
+
+  // After a data reset/restore succeeds, re-pull the reports for the active range
+  // so the numbers immediately reflect the new window.
+  useEffect(() => {
+    if (dataFetcher.state === "idle" && dataFetcher.data?.success && activeTab === "reports") {
+      reportsFetcher.load(`/app/api/reports?range=${reportRange}`);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataFetcher.state, dataFetcher.data]);
+
+  const handleResetData = () => {
+    if (!window.confirm(
+      "Clear your dashboard and start fresh?\n\nThis hides all existing cart activity from your Live feed and Reports. It does NOT delete anything — you can restore it anytime."
+    )) return;
+    dataFetcher.submit({ action: "resetData" }, { method: "POST" });
+  };
+  const handleRestoreData = () => {
+    dataFetcher.submit({ action: "restoreData" }, { method: "POST" });
+  };
 
   const formatTimeAgo = (date: string) => {
     const now = new Date();
@@ -1422,7 +1475,9 @@ export default function Index() {
             <span style={{ fontSize: "12px", color: "#9ca3af" }}>
               {reportsFirstLoading
                 ? "Loading…"
-                : `Based on ${rTotalSessions.toLocaleString()} session${rTotalSessions !== 1 ? "s" : ""} in the last ${reportRange} days`}
+                : dataResetAt
+                  ? `Based on ${rTotalSessions.toLocaleString()} session${rTotalSessions !== 1 ? "s" : ""} since reset`
+                  : `Based on ${rTotalSessions.toLocaleString()} session${rTotalSessions !== 1 ? "s" : ""} in the last ${reportRange} days`}
               {reportsData && reportsFetcher.state === "loading" && " · refreshing…"}
             </span>
             <div style={{ display: "flex", border: "1px solid #e3e3e3", borderRadius: "6px", overflow: "hidden" }}>
@@ -1446,6 +1501,34 @@ export default function Index() {
               ))}
             </div>
           </div>
+
+          {/* Start-fresh / clear-data control (non-destructive reset) */}
+          <div style={{ display: "flex", justifyContent: dataResetAt ? "space-between" : "flex-end", alignItems: "center", marginBottom: "16px", gap: "12px", flexWrap: "wrap" }}>
+            {dataResetAt && (
+              <span style={{ fontSize: "12px", color: "#8c6a1a", background: "#fff8e6", border: "1px solid #f0d9b5", borderRadius: "4px", padding: "4px 10px" }}>
+                Fresh start on {new Date(dataResetAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: displayTimezone })}
+                {" · "}
+                <button
+                  onClick={handleRestoreData}
+                  disabled={dataFetcher.state !== "idle"}
+                  style={{ background: "none", border: "none", color: "#008060", fontWeight: 600, cursor: dataFetcher.state === "idle" ? "pointer" : "not-allowed", padding: 0, fontSize: "12px" }}
+                >
+                  Restore all data
+                </button>
+              </span>
+            )}
+            <button
+              onClick={handleResetData}
+              disabled={dataFetcher.state !== "idle"}
+              title="Hide all existing activity and start fresh. Non-destructive — nothing is deleted and you can restore anytime."
+              style={{ background: "#ffffff", border: "1px solid #e3e3e3", borderRadius: "6px", padding: "6px 12px", fontSize: "13px", color: "#6d7175", cursor: dataFetcher.state === "idle" ? "pointer" : "not-allowed", whiteSpace: "nowrap" }}
+            >
+              {dataFetcher.state !== "idle" ? "Working…" : "Clear data (start fresh)"}
+            </button>
+          </div>
+          {dataFetcher.data && dataFetcher.data.success === false && dataFetcher.data.error && (
+            <div style={{ fontSize: "12px", color: "#d82c0d", marginBottom: "12px" }}>{dataFetcher.data.error}</div>
+          )}
 
           {/* Summary Cards */}
           <div style={{
