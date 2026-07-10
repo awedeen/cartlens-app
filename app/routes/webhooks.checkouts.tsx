@@ -119,6 +119,16 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     if (billing.country_code && !cartSession.countryCode) updates.countryCode = billing.country_code;
   }
 
+  // Shipping the shopper sees at checkout — the SELECTED line (Shopify defaults to
+  // the cheapest). shipping_lines is empty until they reach the shipping step;
+  // overwrite with the latest selection each update, but never wipe it back to
+  // unknown on an update that has no line yet. price "0.00" = free shipping.
+  const shippingLine = payload.shipping_lines?.[0];
+  if (shippingLine && shippingLine.price != null) {
+    updates.shippingCost = parseFloat(shippingLine.price) || 0;
+    if (shippingLine.title) updates.shippingTitle = shippingLine.title;
+  }
+
   await prisma.cartSession.update({
     where: { id: cartSession.id },
     data: updates,

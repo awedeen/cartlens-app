@@ -874,6 +874,8 @@ export default function Index() {
   const rTopProducts = reportsData?.topProducts ?? [];
   const rLeakyProducts = reportsData?.leakyProducts ?? [];
   const rTopReferrers = reportsData?.topReferrers ?? [];
+  const rAvgShipConverted = reportsData?.avgShippingConverted ?? null;
+  const rAvgShipAbandoned = reportsData?.avgShippingAbandoned ?? null;
 
   // Live Carts filter — bots hidden by default, BUT never hide a session that
   // has shown real-customer signals (placed order, captured email/name). The
@@ -1129,6 +1131,17 @@ export default function Index() {
                       {selectedSession.itemCount}
                     </div>
                   </div>
+                  {selectedSession.shippingCost != null && (
+                    <div>
+                      <div style={{ fontSize: "12px", color: "#6d7175", marginBottom: "4px" }}>Shipping</div>
+                      <div style={{ fontSize: "14px", color: selectedSession.shippingCost === 0 ? "#008060" : "#202223", fontWeight: 600 }}>
+                        {selectedSession.shippingCost === 0 ? "Free" : `$${selectedSession.shippingCost.toFixed(2)}`}
+                        {selectedSession.shippingTitle ? (
+                          <span style={{ color: "#919eab", fontWeight: 400 }}> · {selectedSession.shippingTitle}</span>
+                        ) : null}
+                      </div>
+                    </div>
+                  )}
                   {(() => {
                     try {
                       const codes = selectedSession.discountCodes ? JSON.parse(selectedSession.discountCodes as string) : [];
@@ -1522,6 +1535,29 @@ export default function Index() {
                             }
                           />
                           <DetailCell label="Items" value={`${session.itemCount}`} />
+                          {session.shippingCost != null && (() => {
+                            const net = session.cartTotal - session.totalDiscounts;
+                            // Flag shipping that's a heavy share of the cart — the
+                            // classic checkout sticker-shock / abandonment driver.
+                            const heavy = session.shippingCost > 0 && net > 0 && session.shippingCost / net >= 0.15;
+                            return (
+                              <DetailCell
+                                label="Shipping"
+                                value={
+                                  session.shippingCost === 0 ? (
+                                    <span style={{ color: "#008060" }}>Free</span>
+                                  ) : (
+                                    <span style={{ color: heavy ? "#b23c00" : "#202223", fontWeight: heavy ? 700 : 400 }}>
+                                      ${session.shippingCost.toFixed(2)}
+                                      {session.shippingTitle ? (
+                                        <span style={{ color: "#919eab", fontWeight: 400 }}> · {session.shippingTitle}</span>
+                                      ) : null}
+                                    </span>
+                                  )
+                                }
+                              />
+                            );
+                          })()}
                         </div>
 
                         {/* Discount chips */}
@@ -1780,6 +1816,12 @@ export default function Index() {
                 <div style={{ fontSize: "12px", color: "#8c6a1a", marginTop: "4px" }}>
                   These reach checkout often but rarely convert — a common sign of shipping cost, tax, or payment friction at the final step.
                 </div>
+                {rAvgShipConverted != null && rAvgShipAbandoned != null && (
+                  <div style={{ fontSize: "12px", marginTop: "8px", padding: "6px 10px", borderRadius: "4px", background: rAvgShipAbandoned > rAvgShipConverted + 0.005 ? "#fff4ec" : "#f6f6f7", color: "#4a4a4a" }}>
+                    Avg shipping seen: <strong style={{ color: "#b23c00" }}>${rAvgShipAbandoned.toFixed(2)}</strong> on abandoned checkouts vs <strong style={{ color: "#008060" }}>${rAvgShipConverted.toFixed(2)}</strong> on completed orders.
+                    {rAvgShipAbandoned > rAvgShipConverted + 0.005 && " Shoppers who left saw higher shipping — it may be costing you sales."}
+                  </div>
+                )}
               </div>
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
@@ -1787,6 +1829,7 @@ export default function Index() {
                     <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "left" }}>Product</th>
                     <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Checkouts</th>
                     <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Orders</th>
+                    <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }} title="Average shipping these shoppers saw at checkout">Avg shipping</th>
                     <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Lost</th>
                     <th style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 600, color: "#6d7175", textAlign: "right", whiteSpace: "nowrap" }}>Kept</th>
                   </tr>
@@ -1802,6 +1845,9 @@ export default function Index() {
                       </td>
                       <td style={{ padding: "10px 16px", fontSize: "13px", color: "#202223", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
                         {product.conversions}
+                      </td>
+                      <td style={{ padding: "10px 16px", fontSize: "13px", color: product.avgShipping ? "#8c6a1a" : "#8c9196", textAlign: "right", fontWeight: product.avgShipping ? 600 : 400, fontVariantNumeric: "tabular-nums" }}>
+                        {product.avgShipping != null ? `$${product.avgShipping.toFixed(2)}` : "—"}
                       </td>
                       <td style={{ padding: "10px 16px", fontSize: "13px", color: "#b23c00", textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
                         {product.lost}

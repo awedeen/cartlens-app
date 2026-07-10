@@ -49,6 +49,17 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       }
     }
 
+    // Final shipping the shopper paid — order's selected line, else the shipping
+    // total. Definitive value for the converted card + Reports.
+    const orderShippingLine = payload.shipping_lines?.[0];
+    const shippingCost =
+      orderShippingLine?.price != null
+        ? parseFloat(orderShippingLine.price) || 0
+        : payload.total_shipping_price_set?.shop_money?.amount != null
+          ? parseFloat(payload.total_shipping_price_set.shop_money.amount) || 0
+          : null;
+    const shippingTitle = orderShippingLine?.title || null;
+
     const cartToken = payload.cart_token;
     console.log(`[Webhook Orders] Order ${orderId} | cart_token: ${cartToken ? "[present]" : "[missing]"}`);
 
@@ -104,6 +115,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           orderId,
           orderNumber: orderNumber || null,
           orderValue,
+          ...(shippingCost != null ? { shippingCost } : {}),
+          ...(shippingTitle ? { shippingTitle } : {}),
           isSuspectedBot: false,
           botReason: null,
           customerId: customerId || session.customerId,
