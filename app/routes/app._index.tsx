@@ -358,6 +358,21 @@ export default function Index() {
   const [selectedSession, setSelectedSession] = useState<SessionWithMeta | null>(null);
   const selectedSessionRef = useRef<SessionWithMeta | null>(null);
   useEffect(() => { selectedSessionRef.current = selectedSession; }, [selectedSession]);
+
+  // Journey completion: a cart session (webhook) has no page_views of its own
+  // until checkout merges them in. When a cart with no page_views is opened,
+  // fetch the correlated visit's page_views so the detail shows the full journey.
+  const journeyFetcher = useFetcher<{ sessionId: string; pageViews: CartEvent[] } | { error: string }>();
+  useEffect(() => {
+    if (
+      selectedSession &&
+      !selectedSession.events?.some((e) => e.eventType === "page_view")
+    ) {
+      journeyFetcher.load(`/app/api/journey?sessionId=${selectedSession.id}`);
+    }
+    // journeyFetcher identity is stable; only re-run when the opened session changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSession?.id]);
   const eventSourceRef = useRef<EventSource | null>(null);
   const [flashIds, setFlashIds] = useState<Set<string>>(new Set());
   const [mounted, setMounted] = useState(false);
@@ -1152,8 +1167,15 @@ export default function Index() {
                     Customer Journey
                   </h3>
                   {(() => {
+                    // Fold in the correlated visit's page-views (fetched on open)
+                    // so a pre-checkout cart shows the full browsing journey.
+                    const jd = journeyFetcher.data;
+                    const extraPageViews =
+                      jd && "pageViews" in jd && jd.sessionId === selectedSession.id
+                        ? jd.pageViews
+                        : [];
                     // Chronological (first → last) so the journey reads as a story.
-                    const evs = [...selectedSession.events].sort(
+                    const evs = [...selectedSession.events, ...extraPageViews].sort(
                       (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
                     );
                     // Dwell = time until the NEXT step. The last event has no next,

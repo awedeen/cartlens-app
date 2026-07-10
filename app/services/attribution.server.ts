@@ -24,7 +24,7 @@
 
 import prisma from "../db.server";
 import { Prisma } from "@prisma/client";
-import type { CartSession } from "@prisma/client";
+import type { CartSession, CartEvent } from "@prisma/client";
 import sseManager from "./sse.server";
 
 // Pixel sessions are keyed on the Web Pixel's own cookie id (`v_<ts>_<rand>`),
@@ -227,4 +227,81 @@ export async function reconcilePixelSession(
   });
 
   return { mergedId: pixel.id, via };
+}
+
+export interface VisitPageViewsInput {
+  shopId: string;
+  /** The cart session we're completing the journey for (excluded from the match). */
+  cartId: string;
+  customerId?: string | null;
+  customerEmail?: string | null;
+  /** Variant IDs (strings) from the cart's cart_add events, for a contents match. */
+  variantIds: string[];
+  /** The cart's created time — bounds how far back a correlated visit may be. */
+  before: Date;
+}
+
+/**
+ * Display-only journey completion. Before checkout, a shopper's page-views live
+ * on their pixel "visit" session ("v_…"), separate from the webhook "cart"
+ * session — they only get folded together by reconcilePixelSession at checkout.
+ * For the Live Carts detail view we want the FULL story (browsing → cart →
+ * checkout) even pre-checkout, so this finds the correlated visit and returns its
+ * page_view events to interleave into the cart's journey.
+ *
+ * Correlation is conservative, mirroring findFallbackSession: exact identity
+ * (customerId, then customerEmail), else a UNIQUE contents+time match (a single
+ * visit that cart_add'd the same variants) — skip when ambiguous so a stranger's
+ * browsing is never shown. This is display-only; it never mutates data.
+ */
+export async function findVisitPageViews(
+  input: VisitPageViewsInput,
+): Promise<CartEvent[]> {
+  const { shopId, cartId, customerId, customerEmail, variantIds, before } = input;
+
+  const since = new Date(before.getTime() - FALLBACK_WINDOW_MS);
+  const until = new Date(before.getTime() + CLOCK_SKEW_BUFFER_MS);
+  const baseWhere = {
+    shopId,
+    id: { not: cartId },
+    visitorId: { startsWith: PIXEL_VISITOR_PREFIX },
+    createdAt: { gte: since, lte: until },
+  };
+
+  let visit: CartSession | null = null;
+  if (customerId) {
+    visit = await prisma.cartSession.findFirst({
+      where: { ...baseWhere, customerId },
+      orderBy: { createdAt: "desc" },
+    });
+  }
+  if (!visit && customerEmail) {
+    visit = await prisma.cartSession.findFirst({
+      where: { ...baseWhere, customerEmail },
+      orderBy: { createdAt: "desc" },
+    });
+  }
+  if (!visit) {
+    const cleanVariants = Array.from(new Set(variantIds.filter(Boolean)));
+    if (cleanVariants.length > 0) {
+      const candidates = await prisma.cartSession.findMany({
+        where: {
+          ...baseWhere,
+          AND: cleanVariants.map((variantId) => ({
+            events: { some: { eventType: "cart_add", variantId } },
+          })),
+        },
+        orderBy: { createdAt: "desc" },
+        take: 2, // only need to know whether the match is unique
+      });
+      if (candidates.length === 1) visit = candidates[0];
+    }
+  }
+
+  if (!visit) return [];
+
+  return prisma.cartEvent.findMany({
+    where: { sessionId: visit.id, eventType: "page_view" },
+    orderBy: { timestamp: "asc" },
+  });
 }
