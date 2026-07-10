@@ -535,7 +535,11 @@ export default function Index() {
         return s.referrerUrl;
       }
     }
-    return "Direct";
+    // No UTM/referrer. If the pixel captured this visit (landing page present),
+    // it's a genuine direct visit. If not — a webhook cart not yet linked to a
+    // visit (source arrives at checkout) — say "Unknown" rather than fake "Direct".
+    if (s.landingPage) return "Direct";
+    return "Unknown";
   };
 
   const getLocation = (s: CartSession) => {
@@ -749,26 +753,23 @@ export default function Index() {
     !s.customerEmail &&
     !s.customerName;
 
-  // A "pure visitor" only ever viewed pages — no cart, checkout, or order. The
-  // revived pixel logs one per page view, so these are hidden from the cart feed
-  // by default (revealed via the toggle). Any cart/checkout/order signal, or a
-  // captured customer, keeps a session visible as real activity.
-  const isPureVisitor = (s: SessionWithMeta) =>
-    !s.cartCreated &&
-    !s.checkoutStarted &&
-    !s.checkoutAbandoned &&
-    !s.orderPlaced &&
-    !s.customerEmail &&
-    !s.customerName;
+  // A "visit" is a pixel session (visitorId "v_…") — the browsing/marketing
+  // record. It's the pre-checkout twin of a webhook cart, so it's hidden from
+  // the cart feed by default (revealed via the toggle). The one exception: a
+  // pixel session that actually converted (an accelerated "Buy it Now" order
+  // landed straight on it) is a real sale and always shown. Webhook sessions
+  // (cart tokens, hex — never start with "v") are always carts.
+  const isVisitOnly = (s: SessionWithMeta) =>
+    s.visitorId.startsWith("v_") && !s.orderPlaced;
 
   const liveBotCount = sessions.filter(isHiddenBot).length;
   // Apply the bot filter first, then the visitor filter, so the counts/toggles
   // are independent and don't double-hide the same rows.
   const afterBots = showBots ? sessions : sessions.filter((s) => !isHiddenBot(s));
-  const liveVisitorCount = afterBots.filter(isPureVisitor).length;
+  const liveVisitorCount = afterBots.filter(isVisitOnly).length;
   const visibleSessions = showVisitors
     ? afterBots
-    : afterBots.filter((s) => !isPureVisitor(s));
+    : afterBots.filter((s) => !isVisitOnly(s));
 
   return (
     // @ts-ignore -- App Bridge s-page type definition omits `title` but it works at runtime
