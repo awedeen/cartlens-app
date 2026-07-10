@@ -30,8 +30,21 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     }
 
     // Build query filters — validate dates before use.
-    // Exclude merged pixel shadows so a shopper isn't exported twice.
-    const where: Prisma.CartSessionWhereInput = { shopId: shop.id, mergedInto: null };
+    // Match the dashboard/Reports accuracy model so the export lines up with what
+    // the merchant sees: drop merged shadows, un-converted pixel visits (the
+    // pre-checkout twin of a cart), and suspected bots (unless they show real
+    // customer signals).
+    const where: Prisma.CartSessionWhereInput = {
+      shopId: shop.id,
+      mergedInto: null,
+      NOT: { visitorId: { startsWith: "v_" }, orderPlaced: false },
+      OR: [
+        { isSuspectedBot: false },
+        { orderPlaced: true },
+        { customerEmail: { not: null } },
+        { customerName: { not: null } },
+      ],
+    };
 
     if (startDate || endDate) {
       const parsedStart = startDate ? new Date(startDate) : null;
