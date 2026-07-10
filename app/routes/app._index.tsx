@@ -547,6 +547,28 @@ export default function Index() {
     return parts.length ? parts.join(", ") : "Unknown";
   };
 
+  // Human-readable duration for journey dwell times.
+  const formatDuration = (seconds: number) => {
+    if (seconds < 1) return "0s";
+    if (seconds < 60) return `${Math.round(seconds)}s`;
+    const m = Math.floor(seconds / 60);
+    const s = Math.round(seconds % 60);
+    if (m < 60) return s > 0 ? `${m}m ${s}s` : `${m}m`;
+    const h = Math.floor(m / 60);
+    return `${h}h ${m % 60}m`;
+  };
+
+  // Show the path (+ query) rather than the full URL — cleaner in the journey.
+  const getPagePath = (url: string | null | undefined) => {
+    if (!url) return "";
+    try {
+      const u = new URL(url);
+      return u.pathname + (u.search || "");
+    } catch {
+      return url;
+    }
+  };
+
   const getEventIcon = (eventType: string) => {
     switch (eventType) {
       case "cart_add":
@@ -1014,91 +1036,94 @@ export default function Index() {
                   })()}
                 </div>
 
-                {/* Session Timeline */}
+                {/* Customer Journey */}
                 <div>
                   <h3 style={{ fontSize: "16px", fontWeight: 600, color: "#202223", marginBottom: "12px" }}>
-                    Session Timeline
+                    Customer Journey
                   </h3>
-                  <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                    {selectedSession.events.map((event) => {
-                        const isConversion = event.eventType === "checkout_completed";
-                        const isCheckout = event.eventType === "checkout_started" || event.eventType === "checkout_item";
-                        const isAbandoned = event.eventType === "checkout_abandoned";
-                        const rowBg = isConversion ? "#f1faf5" : isAbandoned ? "#fff4ec" : isCheckout ? "#fdf9ed" : "#ffffff";
-                        const rowBorder = isConversion ? "1px solid #95c9b4" : isAbandoned ? "1px solid #e8a060" : isCheckout ? "1px solid #e0c065" : "1px solid #e3e3e3";
-                        const iconBg = isConversion ? "#007a5a" : isAbandoned ? "#c05c00" : isCheckout ? "#b7891a" : "#ffffff";
-                        const iconColor = (isConversion || isCheckout || isAbandoned) ? "#ffffff" : "#202223";
-                        const iconBorder = isConversion ? "1px solid #007a5a" : isAbandoned ? "1px solid #c05c00" : isCheckout ? "1px solid #b7891a" : "1px solid #e3e3e3";
-                        return (
-                      <div
-                        key={event.id}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "12px",
-                          padding: "12px",
-                          background: rowBg,
-                          borderRadius: "4px",
-                          border: rowBorder,
-                          animation: "clFade 0.4s ease"
-                        }}
-                      >
-                        <div style={{
-                          width: "28px",
-                          height: "28px",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          background: iconBg,
-                          border: iconBorder,
-                          borderRadius: "4px",
-                          fontSize: "16px",
-                          fontWeight: 700,
-                          flexShrink: 0,
-                          color: iconColor
-                        }}>
-                          {getEventIcon(event.eventType)}
+                  {(() => {
+                    // Chronological (first → last) so the journey reads as a story.
+                    const evs = [...selectedSession.events].sort(
+                      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+                    );
+                    // Dwell = time until the NEXT step. The last event has no next,
+                    // so its dwell is unknown (we can't detect page unload reliably).
+                    const dwell = new Map<string, number>();
+                    for (let i = 0; i < evs.length - 1; i++) {
+                      dwell.set(
+                        evs[i].id,
+                        (new Date(evs[i + 1].timestamp).getTime() - new Date(evs[i].timestamp).getTime()) / 1000,
+                      );
+                    }
+                    const pageCount = evs.filter((e) => e.eventType === "page_view").length;
+                    const totalSecs =
+                      evs.length > 1
+                        ? (new Date(evs[evs.length - 1].timestamp).getTime() - new Date(evs[0].timestamp).getTime()) / 1000
+                        : 0;
+                    return (
+                      <>
+                        {/* Journey summary — entry + how they moved */}
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 16px", fontSize: "13px", color: "#6d7175", marginBottom: "12px", padding: "10px 12px", background: "#f6f6f7", borderRadius: "4px" }}>
+                          <span><strong style={{ color: "#202223" }}>{pageCount}</strong> page{pageCount === 1 ? "" : "s"} viewed</span>
+                          {totalSecs > 0 && <span><strong style={{ color: "#202223" }}>{formatDuration(totalSecs)}</strong> on site</span>}
+                          <span>from <strong style={{ color: "#202223" }}>{getTrafficSource(selectedSession)}</strong></span>
+                          {selectedSession.landingPage && (
+                            <span>landed on <strong style={{ color: "#202223" }}>{getPagePath(selectedSession.landingPage)}</strong></span>
+                          )}
                         </div>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontSize: "12px", color: "#6d7175", marginBottom: "4px" }}>
-                            {new Date(event.timestamp).toLocaleTimeString(undefined, { timeZone: displayTimezone })}
-                          </div>
-                          <div style={{ fontSize: "14px", color: "#202223" }}>
-                            {event.eventType === "cart_add" && (
-                              <>
-                                Added {event.productTitle}
-                                {event.variantTitle && ` - ${event.variantTitle}`}
-                                {event.quantity && ` (${event.quantity}x)`}
-                                {event.price && ` — $${event.price.toFixed(2)}`}
-                              </>
-                            )}
-                            {event.eventType === "cart_remove" && (
-                              <>
-                                Removed {event.productTitle}
-                                {event.variantTitle && ` - ${event.variantTitle}`}
-                              </>
-                            )}
-                            {event.eventType === "page_view" && (
-                              <>Viewed {event.pageUrl}</>
-                            )}
-                            {event.eventType === "checkout_started" && "Checkout started"}
-                            {event.eventType === "checkout_item" && (
-                              <>
-                                In checkout: {event.productTitle}
-                                {event.variantTitle && ` - ${event.variantTitle}`}
-                                {event.quantity && ` (${event.quantity}x)`}
-                                {event.price && ` — $${event.price.toFixed(2)}`}
-                              </>
-                            )}
-                            {event.eventType === "checkout_completed" && (
-                              <>Order placed{selectedSession.orderNumber ? ` — #${selectedSession.orderNumber}` : ""}</>
-                            )}
-                            {event.eventType === "checkout_abandoned" && "Left checkout — returned to browsing"}
-                          </div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                          {evs.map((event) => {
+                            const isConversion = event.eventType === "checkout_completed";
+                            const isCheckout = event.eventType === "checkout_started" || event.eventType === "checkout_item";
+                            const isAbandoned = event.eventType === "checkout_abandoned";
+                            const rowBg = isConversion ? "#f1faf5" : isAbandoned ? "#fff4ec" : isCheckout ? "#fdf9ed" : "#ffffff";
+                            const rowBorder = isConversion ? "1px solid #95c9b4" : isAbandoned ? "1px solid #e8a060" : isCheckout ? "1px solid #e0c065" : "1px solid #e3e3e3";
+                            const iconBg = isConversion ? "#007a5a" : isAbandoned ? "#c05c00" : isCheckout ? "#b7891a" : "#ffffff";
+                            const iconColor = (isConversion || isCheckout || isAbandoned) ? "#ffffff" : "#202223";
+                            const iconBorder = isConversion ? "1px solid #007a5a" : isAbandoned ? "1px solid #c05c00" : isCheckout ? "1px solid #b7891a" : "1px solid #e3e3e3";
+                            const dwellSecs = dwell.get(event.id);
+                            return (
+                              <div
+                                key={event.id}
+                                style={{ display: "flex", alignItems: "center", gap: "12px", padding: "12px", background: rowBg, borderRadius: "4px", border: rowBorder, animation: "clFade 0.4s ease" }}
+                              >
+                                <div style={{ width: "28px", height: "28px", display: "flex", alignItems: "center", justifyContent: "center", background: iconBg, border: iconBorder, borderRadius: "4px", fontSize: "16px", fontWeight: 700, flexShrink: 0, color: iconColor }}>
+                                  {getEventIcon(event.eventType)}
+                                </div>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontSize: "12px", color: "#6d7175", marginBottom: "4px", display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                                    <span>{new Date(event.timestamp).toLocaleTimeString(undefined, { timeZone: displayTimezone })}</span>
+                                    {event.eventType === "page_view" && dwellSecs !== undefined && dwellSecs >= 1 && (
+                                      <span style={{ color: "#919eab" }}>· spent {formatDuration(dwellSecs)}</span>
+                                    )}
+                                  </div>
+                                  <div style={{ fontSize: "14px", color: "#202223", overflow: "hidden", textOverflow: "ellipsis" }}>
+                                    {event.eventType === "cart_add" && (
+                                      <>Added {event.productTitle}{event.variantTitle && ` - ${event.variantTitle}`}{event.quantity ? ` (${event.quantity}x)` : ""}{event.price ? ` — $${event.price.toFixed(2)}` : ""}</>
+                                    )}
+                                    {event.eventType === "cart_remove" && (
+                                      <>Removed {event.productTitle}{event.variantTitle && ` - ${event.variantTitle}`}</>
+                                    )}
+                                    {event.eventType === "page_view" && (
+                                      <>Viewed <span style={{ fontWeight: 500 }}>{event.pageTitle || getPagePath(event.pageUrl) || "page"}</span>{event.pageTitle && event.pageUrl ? <span style={{ color: "#919eab" }}> · {getPagePath(event.pageUrl)}</span> : null}</>
+                                    )}
+                                    {event.eventType === "checkout_started" && "Checkout started"}
+                                    {event.eventType === "checkout_item" && (
+                                      <>In checkout: {event.productTitle}{event.variantTitle && ` - ${event.variantTitle}`}{event.quantity ? ` (${event.quantity}x)` : ""}{event.price ? ` — $${event.price.toFixed(2)}` : ""}</>
+                                    )}
+                                    {event.eventType === "checkout_completed" && (
+                                      <>Order placed{selectedSession.orderNumber ? ` — #${selectedSession.orderNumber}` : ""}</>
+                                    )}
+                                    {event.eventType === "checkout_abandoned" && "Left checkout — returned to browsing"}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
-                      </div>
-                    ); })}
-                  </div>
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
