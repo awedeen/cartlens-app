@@ -420,14 +420,29 @@ export default function Index() {
         // Guard against null session (race: session deleted between webhook write and SSE broadcast)
         if (!update?.session) return;
 
+        const incoming = update.session;
+
+        // A merged pixel shadow (mergedInto set) has been folded into its
+        // canonical cart_token session — its marketing data now lives there and
+        // it carries no cart/customer of its own. The loader hides these, so the
+        // live feed must too: drop it from the list (removing any already-rendered
+        // ghost) instead of inserting/patching it. Also close the detail panel if
+        // the merged shadow happened to be open. No flash — nothing to surface.
+        if (incoming.mergedInto) {
+          setSessions((prev) => prev.filter((s) => s.id !== incoming.id));
+          if (selectedSessionRef.current?.id === incoming.id) {
+            setSelectedSession(null);
+          }
+          return;
+        }
+
         // Don't flash sessions flagged as suspected bots — they're filtered
         // from the list anyway, and flashing would draw the eye to an empty row.
-        if (!update.session.isSuspectedBot) {
-          triggerFlash(update.session.id);
+        if (!incoming.isSuspectedBot) {
+          triggerFlash(incoming.id);
         }
 
         setSessions((prev) => {
-          const incoming = update.session;
           const existing = prev.find((s) => s.id === incoming.id);
           if (existing) {
             // Patch incoming events onto the full existing history — never drop events
@@ -838,10 +853,21 @@ export default function Index() {
   const isVisitOnly = (s: SessionWithMeta) =>
     s.visitorId.startsWith("v_") && !s.orderId;
 
-  const liveBotCount = sessions.filter(isHiddenBot).length;
+  // A merged pixel shadow (mergedInto set) has had its marketing data folded
+  // onto the canonical cart_token session; it now carries no cart contents or
+  // customer of its own and would render as a blank (sometimes "Converted")
+  // duplicate. The loader excludes these unconditionally (mergedInto: null) —
+  // the live feed must match, or a ghost row appears via SSE and vanishes on
+  // refresh. Not toggleable: a merged shadow is never something to show.
+  const isMergedShadow = (s: SessionWithMeta) => !!s.mergedInto;
+
+  // Drop merged shadows before any toggle so counts and rows stay consistent
+  // with the loader regardless of the bot/visitor toggle state.
+  const unmerged = sessions.filter((s) => !isMergedShadow(s));
+  const liveBotCount = unmerged.filter(isHiddenBot).length;
   // Apply the bot filter first, then the visitor filter, so the counts/toggles
   // are independent and don't double-hide the same rows.
-  const afterBots = showBots ? sessions : sessions.filter((s) => !isHiddenBot(s));
+  const afterBots = showBots ? unmerged : unmerged.filter((s) => !isHiddenBot(s));
   const liveVisitorCount = afterBots.filter(isVisitOnly).length;
   const visibleSessions = showVisitors
     ? afterBots

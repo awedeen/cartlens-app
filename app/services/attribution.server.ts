@@ -25,6 +25,7 @@
 import prisma from "../db.server";
 import { Prisma } from "@prisma/client";
 import type { CartSession } from "@prisma/client";
+import sseManager from "./sse.server";
 
 // Pixel sessions are keyed on the Web Pixel's own cookie id (`v_<ts>_<rand>`),
 // which never equals a Shopify cart_token. This prefix is how we tell a
@@ -214,6 +215,16 @@ export async function reconcilePixelSession(
       data: { mergedInto: canonicalId },
     }),
   ]);
+
+  // Notify open dashboards that the shadow was merged. The pixel session may
+  // already be rendered live (SSE broadcast it before the merge); without this,
+  // it lingers as a blank/duplicate "ghost" row until the next full page load
+  // (the loader filters mergedInto). Broadcasting the shadow now carrying
+  // mergedInto lets the client drop it immediately. Best-effort — a broadcast
+  // failure must never fail the merge, so callers keep their own try/catch.
+  sseManager.broadcast(shopId, "cart-update", {
+    session: { ...pixel, mergedInto: canonicalId },
+  });
 
   return { mergedId: pixel.id, via };
 }
