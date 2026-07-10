@@ -646,11 +646,11 @@ export default function Index() {
     const renderRow = (item: any, i: number) => (
       <div key={i} style={{ display: "flex", alignItems: "center", gap: "8px", opacity: item.removed ? 0.5 : 1 }}>
         {item.variantImage ? (
-          // objectFit "contain" preserves the listing photo's real aspect ratio
-          // (letterboxed in the square box) instead of cropping it to a square.
-          <img src={item.variantImage} alt="" style={{ width: "32px", height: "32px", objectFit: "contain", background: "#ffffff", borderRadius: "4px", border: "1px solid #e3e3e3", flexShrink: 0 }} />
+          // Just the image — no border/frame. objectFit "contain" keeps the
+          // listing photo's real aspect ratio; larger for a clearer look.
+          <img src={item.variantImage} alt="" style={{ width: "52px", height: "52px", objectFit: "contain", borderRadius: "4px", flexShrink: 0 }} />
         ) : (
-          <div style={{ width: "32px", height: "32px", borderRadius: "4px", border: "1px solid #e3e3e3", background: "#f6f6f7", flexShrink: 0 }} />
+          <div style={{ width: "52px", height: "52px", borderRadius: "4px", background: "#f0f0f0", flexShrink: 0 }} />
         )}
         <div style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "12px", color: item.removed ? "#6d7175" : "#202223", textDecoration: item.removed ? "line-through" : "none" }}>
           {item.productTitle}
