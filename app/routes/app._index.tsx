@@ -366,6 +366,10 @@ export default function Index() {
   // reveals them. The flag is set either by the pixel UA matcher (when
   // botFilterEnabled is on) or the webhook burst-cluster heuristic.
   const [showBots, setShowBots] = useState(false);
+  // Live Carts is a CART feed. The pixel logs a session on every page view, so
+  // pure browsers (no cart/checkout/order) are hidden by default; this toggle
+  // reveals them.
+  const [showVisitors, setShowVisitors] = useState(false);
 
   // Connect to SSE for real-time updates
   useEffect(() => {
@@ -744,10 +748,27 @@ export default function Index() {
     !s.orderPlaced &&
     !s.customerEmail &&
     !s.customerName;
+
+  // A "pure visitor" only ever viewed pages — no cart, checkout, or order. The
+  // revived pixel logs one per page view, so these are hidden from the cart feed
+  // by default (revealed via the toggle). Any cart/checkout/order signal, or a
+  // captured customer, keeps a session visible as real activity.
+  const isPureVisitor = (s: SessionWithMeta) =>
+    !s.cartCreated &&
+    !s.checkoutStarted &&
+    !s.checkoutAbandoned &&
+    !s.orderPlaced &&
+    !s.customerEmail &&
+    !s.customerName;
+
   const liveBotCount = sessions.filter(isHiddenBot).length;
-  const visibleSessions = showBots
-    ? sessions
-    : sessions.filter((s) => !isHiddenBot(s));
+  // Apply the bot filter first, then the visitor filter, so the counts/toggles
+  // are independent and don't double-hide the same rows.
+  const afterBots = showBots ? sessions : sessions.filter((s) => !isHiddenBot(s));
+  const liveVisitorCount = afterBots.filter(isPureVisitor).length;
+  const visibleSessions = showVisitors
+    ? afterBots
+    : afterBots.filter((s) => !isPureVisitor(s));
 
   return (
     // @ts-ignore -- App Bridge s-page type definition omits `title` but it works at runtime
@@ -1095,31 +1116,56 @@ export default function Index() {
                 }}>
                   {visibleSessions.length}
                 </span>
-                {liveBotCount > 0 && (
-                  <button
-                    onClick={() => setShowBots((s) => !s)}
-                    title={
-                      showBots
-                        ? "Hide sessions flagged by the bot UA matcher or the burst-cluster heuristic"
-                        : "Show sessions flagged as suspected bots (UA match or burst-cluster)"
-                    }
-                    style={{
-                      marginLeft: "auto",
-                      background: showBots ? "#fff8e6" : "#ffffff",
-                      border: "1px solid #e3e3e3",
-                      borderRadius: "4px",
-                      padding: "4px 10px",
-                      fontSize: "12px",
-                      color: "#6d7175",
-                      cursor: "pointer",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {showBots
-                      ? `Hide suspected bots (${liveBotCount})`
-                      : `Show suspected bots (${liveBotCount})`}
-                  </button>
-                )}
+                <div style={{ marginLeft: "auto", display: "flex", gap: "8px" }}>
+                  {liveVisitorCount > 0 && (
+                    <button
+                      onClick={() => setShowVisitors((s) => !s)}
+                      title={
+                        showVisitors
+                          ? "Hide page-view-only visitors (no cart activity)"
+                          : "Show visitors who viewed pages but have no cart activity yet"
+                      }
+                      style={{
+                        background: showVisitors ? "#eef3ff" : "#ffffff",
+                        border: "1px solid #e3e3e3",
+                        borderRadius: "4px",
+                        padding: "4px 10px",
+                        fontSize: "12px",
+                        color: "#6d7175",
+                        cursor: "pointer",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {showVisitors
+                        ? `Hide visitors (${liveVisitorCount})`
+                        : `Show visitors (${liveVisitorCount})`}
+                    </button>
+                  )}
+                  {liveBotCount > 0 && (
+                    <button
+                      onClick={() => setShowBots((s) => !s)}
+                      title={
+                        showBots
+                          ? "Hide sessions flagged by the bot UA matcher or the burst-cluster heuristic"
+                          : "Show sessions flagged as suspected bots (UA match or burst-cluster)"
+                      }
+                      style={{
+                        background: showBots ? "#fff8e6" : "#ffffff",
+                        border: "1px solid #e3e3e3",
+                        borderRadius: "4px",
+                        padding: "4px 10px",
+                        fontSize: "12px",
+                        color: "#6d7175",
+                        cursor: "pointer",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {showBots
+                        ? `Hide suspected bots (${liveBotCount})`
+                        : `Show suspected bots (${liveBotCount})`}
+                    </button>
+                  )}
+                </div>
               </div>
 
               {visibleSessions.length === 0 ? (
@@ -1134,10 +1180,15 @@ export default function Index() {
                   {sessions.length > 0 ? (
                     <div>
                       <div style={{ fontSize: "16px", fontWeight: 600, color: "#202223", marginBottom: "8px" }}>
-                        All recent sessions flagged as suspected bots
+                        No cart activity yet
                       </div>
                       <div style={{ fontSize: "14px", color: "#6d7175" }}>
-                        {liveBotCount} session{liveBotCount === 1 ? "" : "s"} hidden. Click "Show suspected bots" above to review them.
+                        {liveVisitorCount > 0 && (
+                          <>{liveVisitorCount} visitor{liveVisitorCount === 1 ? "" : "s"} browsing but no cart yet — click "Show visitors" above to see them. </>
+                        )}
+                        {liveBotCount > 0 && (
+                          <>{liveBotCount} suspected bot{liveBotCount === 1 ? "" : "s"} hidden. </>
+                        )}
                       </div>
                     </div>
                   ) : data.pixelInstalled || fetcher.data?.pixelInstalled ? (
