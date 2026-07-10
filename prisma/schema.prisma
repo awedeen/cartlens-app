@@ -100,6 +100,12 @@ model CartSession {
   isSuspectedBot    Boolean @default(false)
   botReason         String?
 
+  // Session unification: a pixel (v_) session whose marketing data has been
+  // merged into a canonical cart_token session points here. Non-null = merged
+  // shadow; hidden from Live Carts and excluded from Reports so one physical
+  // shopper is counted once. The canonical session keeps mergedInto NULL.
+  mergedInto        String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -109,6 +115,7 @@ model CartSession {
   @@index([shopId])
   @@index([shopId, createdAt])
   @@index([visitorId])
+  @@index([shopId, mergedInto])
 }
 
 model CartEvent {

@@ -109,6 +109,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       FROM "CartSession"
       WHERE "shopId" = ${shop.id}
         AND "createdAt" >= ${cutoff}
+        AND "mergedInto" IS NULL
         AND (
           "isSuspectedBot" = false
           OR "orderPlaced" = true
@@ -136,6 +137,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       INNER JOIN "CartSession" s ON s.id = e."sessionId"
       WHERE s."shopId" = ${shop.id}
         AND s."createdAt" >= ${cutoff}
+        AND s."mergedInto" IS NULL
         AND (
           s."isSuspectedBot" = false
           OR s."orderPlaced" = true
@@ -161,6 +163,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         INNER JOIN "CartSession" s ON s.id = e."sessionId"
         WHERE s."shopId" = ${shop.id}
           AND s."createdAt" >= ${cutoff}
+          AND s."mergedInto" IS NULL
           AND (
             s."isSuspectedBot" = false
             OR s."orderPlaced" = true
@@ -199,6 +202,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       FROM "CartSession"
       WHERE "shopId" = ${shop.id}
         AND "createdAt" >= ${cutoff}
+        AND "mergedInto" IS NULL
         AND (
           "isSuspectedBot" = false
           OR "orderPlaced" = true

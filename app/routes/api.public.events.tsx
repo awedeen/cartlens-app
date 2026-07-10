@@ -76,6 +76,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       utmSource,
       utmMedium,
       utmCampaign,
+      utmContent,
+      utmId,
       deviceType,
       browser,
       os,
@@ -99,6 +101,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     const safeUtmSource = sanitizeString(utmSource, 100);
     const safeUtmMedium = sanitizeString(utmMedium, 100);
     const safeUtmCampaign = sanitizeString(utmCampaign, 255);
+    const safeUtmContent = sanitizeString(utmContent, 255);
+    const safeUtmId = sanitizeString(utmId, 255);
 
     // Validate required fields
     if (!safeShopDomain || !safeVisitorId || !eventType) {
@@ -141,6 +145,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     // Find or create CartSession — upsert is race-condition-safe
     // On conflict (same shopId+visitorId), only update mutable identity fields.
+    // UTM, geo, landing page, and referrer use "first-wins" — set on create,
+    // never overwritten on update. This prevents later events (e.g. /cart page
+    // with no UTMs) from wiping the original attribution data.
     // undefined values are ignored by Prisma (field stays unchanged).
     const cartSession = await prisma.cartSession.upsert({
       where: { shopId_visitorId: { shopId: shop.id, visitorId: safeVisitorId! } },
@@ -155,6 +162,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         utmSource: safeUtmSource,
         utmMedium: safeUtmMedium,
         utmCampaign: safeUtmCampaign,
+        utmContent: safeUtmContent,
+        utmId: safeUtmId,
         ipAddress: resolvedIP,
         city,
         country,
@@ -167,13 +176,17 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         botReason: isSuspectedBot ? botDetection.reason : null,
       },
       update: {
-        // Only overwrite if new value is present — undefined = leave unchanged in Prisma
+        // Customer identity: overwrite when new value arrives (login during session)
         customerId: customerId || undefined,
         customerEmail: safeCustomerEmail || undefined,
         customerName: safeCustomerName || undefined,
+        // Geo: only fill if currently empty (first-wins)
         city: city || undefined,
         country: country || undefined,
         countryCode: countryCode || undefined,
+        // UTM/attribution: NOT included here — first-wins strategy.
+        // The create path captures the original attribution; subsequent
+        // events from the same session do not overwrite it.
         updatedAt: new Date(),
       },
     });

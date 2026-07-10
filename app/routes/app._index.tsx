@@ -44,9 +44,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     update: {},
   });
 
-  // Get recent sessions (last 100)
+  // Get recent sessions (last 100). Exclude merged pixel shadows — their
+  // marketing data now lives on the canonical cart_token session, so showing
+  // them would duplicate the shopper in the feed.
   const sessions = await prisma.cartSession.findMany({
-    where: { shopId: shop.id },
+    where: { shopId: shop.id, mergedInto: null },
     include: {
       events: {
         orderBy: { timestamp: "desc" },
@@ -137,6 +139,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     const allCustomerSessions = await prisma.cartSession.findMany({
       where: {
         shopId: shop.id,
+        mergedInto: null,
         OR: [
           ...(customerEmails.length > 0 ? [{ customerEmail: { in: customerEmails } }] : []),
           ...(customerIds.length > 0 ? [{ customerId: { in: customerIds } }] : []),
@@ -599,7 +602,9 @@ export default function Index() {
     const renderRow = (item: any, i: number) => (
       <div key={i} style={{ display: "flex", alignItems: "center", gap: "8px", opacity: item.removed ? 0.5 : 1 }}>
         {item.variantImage ? (
-          <img src={item.variantImage} alt="" style={{ width: "32px", height: "32px", objectFit: "cover", borderRadius: "4px", border: "1px solid #e3e3e3", flexShrink: 0 }} />
+          // objectFit "contain" preserves the listing photo's real aspect ratio
+          // (letterboxed in the square box) instead of cropping it to a square.
+          <img src={item.variantImage} alt="" style={{ width: "32px", height: "32px", objectFit: "contain", background: "#ffffff", borderRadius: "4px", border: "1px solid #e3e3e3", flexShrink: 0 }} />
         ) : (
           <div style={{ width: "32px", height: "32px", borderRadius: "4px", border: "1px solid #e3e3e3", background: "#f6f6f7", flexShrink: 0 }} />
         )}

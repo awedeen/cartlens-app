@@ -23,7 +23,13 @@
 // no storefront cart) are never speculatively attributed.
 
 import prisma from "../db.server";
+import { Prisma } from "@prisma/client";
 import type { CartSession } from "@prisma/client";
+
+// Pixel sessions are keyed on the Web Pixel's own cookie id (`v_<ts>_<rand>`),
+// which never equals a Shopify cart_token. This prefix is how we tell a
+// browser-side "marketing" session apart from a webhook "cart" session.
+const PIXEL_VISITOR_PREFIX = "v_";
 
 // How far back to look for a candidate cart. A buyer may add to cart and convert
 // hours later; 24h is generous without trawling unrelated history.
@@ -105,4 +111,109 @@ export async function findFallbackSession(
 
   // 0 candidates → nothing to recover; 2+ → ambiguous, skip to avoid mis-attribution.
   return null;
+}
+
+export interface ReconcileInput {
+  shopId: string;
+  /** The canonical cart_token session to enrich (the one an order attaches to). */
+  canonicalId: string;
+  customerId?: string | null;
+  customerEmail?: string | null;
+  /** Order/checkout creation time — bounds how far back a pixel session may be. */
+  before: Date;
+}
+
+/**
+ * Session unification. The Web Pixel and the Admin webhooks each create their
+ * own CartSession for the same physical shopper — the pixel keys on its cookie
+ * id (`v_…`, carrying UTM/referrer/device/page-views), the webhook keys on the
+ * cart_token (carrying cart contents and the token orders attach to). This
+ * folds the pixel "marketing" session into the canonical cart_token session so
+ * one shopper is counted once and the sale is attributed to its true source.
+ *
+ * Matching is EXACT-IDENTITY only (customerId, then customerEmail) — never a
+ * fuzzy contents guess — so a shopper's marketing data is never grafted onto a
+ * stranger's cart. Marketing/device/geo fields are copied fill-empty (the
+ * canonical's own values always win); page_view events (which webhooks never
+ * produce, so there's no duplication) are re-pointed onto the canonical; and
+ * the pixel session is stamped `mergedInto` so the feed and Reports hide it.
+ *
+ * No-op and safe when the pixel is dead (no `v_` sessions exist) or identity is
+ * unknown — returns null without touching anything.
+ */
+export async function reconcilePixelSession(
+  input: ReconcileInput,
+): Promise<{ mergedId: string; via: "customerId" | "customerEmail" } | null> {
+  const { shopId, canonicalId, customerId, customerEmail, before } = input;
+  if (!customerId && !customerEmail) return null;
+
+  const since = new Date(before.getTime() - FALLBACK_WINDOW_MS);
+  const until = new Date(before.getTime() + CLOCK_SKEW_BUFFER_MS);
+  const baseWhere = {
+    shopId,
+    id: { not: canonicalId },
+    mergedInto: null,
+    visitorId: { startsWith: PIXEL_VISITOR_PREFIX },
+    createdAt: { gte: since, lte: until },
+  };
+
+  let pixel: CartSession | null = null;
+  let via: "customerId" | "customerEmail" | null = null;
+  if (customerId) {
+    pixel = await prisma.cartSession.findFirst({
+      where: { ...baseWhere, customerId },
+      orderBy: { createdAt: "desc" },
+    });
+    if (pixel) via = "customerId";
+  }
+  if (!pixel && customerEmail) {
+    pixel = await prisma.cartSession.findFirst({
+      where: { ...baseWhere, customerEmail },
+      orderBy: { createdAt: "desc" },
+    });
+    if (pixel) via = "customerEmail";
+  }
+  if (!pixel || !via) return null;
+
+  const canonical = await prisma.cartSession.findUnique({ where: { id: canonicalId } });
+  if (!canonical) return null;
+
+  // Take the pixel's value only where the canonical currently has none.
+  const fill = (current: string | null, incoming: string | null): string | undefined =>
+    !current && incoming ? incoming : undefined;
+
+  const data: Prisma.CartSessionUpdateInput = {
+    utmSource: fill(canonical.utmSource, pixel.utmSource),
+    utmMedium: fill(canonical.utmMedium, pixel.utmMedium),
+    utmCampaign: fill(canonical.utmCampaign, pixel.utmCampaign),
+    utmContent: fill(canonical.utmContent, pixel.utmContent),
+    utmId: fill(canonical.utmId, pixel.utmId),
+    referrerUrl: fill(canonical.referrerUrl, pixel.referrerUrl),
+    landingPage: fill(canonical.landingPage, pixel.landingPage),
+    deviceType: fill(canonical.deviceType, pixel.deviceType),
+    browser: fill(canonical.browser, pixel.browser),
+    os: fill(canonical.os, pixel.os),
+    deviceModel: fill(canonical.deviceModel, pixel.deviceModel),
+    userAgent: fill(canonical.userAgent, pixel.userAgent),
+    ipAddress: fill(canonical.ipAddress, pixel.ipAddress),
+    city: fill(canonical.city, pixel.city),
+    country: fill(canonical.country, pixel.country),
+    countryCode: fill(canonical.countryCode, pixel.countryCode),
+    customerName: fill(canonical.customerName, pixel.customerName),
+  };
+
+  // One transaction: enrich canonical, move page-view history, retire the shadow.
+  await prisma.$transaction([
+    prisma.cartSession.update({ where: { id: canonicalId }, data }),
+    prisma.cartEvent.updateMany({
+      where: { sessionId: pixel.id, eventType: "page_view" },
+      data: { sessionId: canonicalId },
+    }),
+    prisma.cartSession.update({
+      where: { id: pixel.id },
+      data: { mergedInto: canonicalId },
+    }),
+  ]);
+
+  return { mergedId: pixel.id, via };
 }
