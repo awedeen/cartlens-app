@@ -267,9 +267,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       }
     }
 
-    if (eventType === "checkout_completed") {
-      updates.orderPlaced = true;
-    }
+    // Deliberately do NOT set orderPlaced from the pixel's checkout_completed.
+    // The orders webhook is the single source of truth for conversions. Letting
+    // the pixel mark its own (v_) session converted produced a phantom second
+    // "Converted" row (no cart / 0 items) next to the real webhook cart. The
+    // event is still recorded above for the journey; only the webhook flips the
+    // conversion flag (and the merge folds this visit's source onto that cart).
 
     // Detect checkout abandonment: page_view after checkout started, before order placed
     if (
