@@ -120,11 +120,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         },
       });
 
-      // Create order event
+      // Create order event — stamp it with the order's REAL placed-at time
+      // (payload.created_at), not "now". A delayed/redelivered webhook processing
+      // an hour after the sale would otherwise record the conversion as just-now.
       await prisma.cartEvent.create({
         data: {
           sessionId: session.id,
           eventType: "checkout_completed",
+          timestamp: payload.created_at ? new Date(payload.created_at) : new Date(),
         },
       });
 
