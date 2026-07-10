@@ -1292,17 +1292,23 @@ export default function Index() {
                           <DetailCell
                             label="Cart"
                             value={
-                              session.itemCount === 0 ? (
+                              session.itemCount > 0 ? (
+                                session.totalDiscounts > 0 ? (
+                                  <>
+                                    <span style={{ textDecoration: "line-through", color: "#8c9196", marginRight: "4px" }}>
+                                      ${session.cartTotal.toFixed(2)}
+                                    </span>
+                                    ${netTotal.toFixed(2)}
+                                  </>
+                                ) : (
+                                  `$${session.cartTotal.toFixed(2)}`
+                                )
+                              ) : session.cartCreated ? (
+                                // Had a cart, now empty — genuinely emptied.
                                 <span style={{ color: "#d82c0d" }}>Emptied</span>
-                              ) : session.totalDiscounts > 0 ? (
-                                <>
-                                  <span style={{ textDecoration: "line-through", color: "#8c9196", marginRight: "4px" }}>
-                                    ${session.cartTotal.toFixed(2)}
-                                  </span>
-                                  ${netTotal.toFixed(2)}
-                                </>
                               ) : (
-                                `$${session.cartTotal.toFixed(2)}`
+                                // Never had a cart — just browsing. Not "emptied".
+                                <span style={{ color: "#8c9196" }}>—</span>
                               )
                             }
                           />
