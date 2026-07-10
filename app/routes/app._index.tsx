@@ -45,24 +45,35 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     update: {},
   });
 
-  // Get recent sessions (last 100). Exclude merged pixel shadows — their
-  // marketing data now lives on the canonical cart_token session, so showing
-  // them would duplicate the shopper in the feed. Respect the "start fresh"
-  // reset point when set.
-  const sessions = await prisma.cartSession.findMany({
-    where: {
-      shopId: shop.id,
-      mergedInto: null,
-      ...(shop.dataResetAt ? { createdAt: { gte: shop.dataResetAt } } : {}),
-    },
-    include: {
-      events: {
-        orderBy: { timestamp: "desc" },
-      },
-    },
-    orderBy: { updatedAt: "desc" },
-    take: 100,
-  });
+  // Load carts and visits SEPARATELY so real carts can't be pushed out of the
+  // feed by the flood of page-view "visit" sessions the pixel logs. A single
+  // `take: 100` ordered by updatedAt filled up with visits, so carts fell out of
+  // the load and "disappeared on refresh" even though SSE had shown them live.
+  //   - carts  = webhook cart_token sessions + converted pixel sessions (orderId)
+  //   - visits = un-converted pixel sessions ("v_…", no orderId) — hidden by
+  //              default, revealed by the "Show visitors" toggle, so we only need
+  //              a recent slice of them.
+  // Both exclude merged shadows and respect the "start fresh" reset point.
+  const feedBaseWhere = {
+    shopId: shop.id,
+    mergedInto: null,
+    ...(shop.dataResetAt ? { createdAt: { gte: shop.dataResetAt } } : {}),
+  };
+  const [cartSessions, visitSessions] = await Promise.all([
+    prisma.cartSession.findMany({
+      where: { ...feedBaseWhere, NOT: { visitorId: { startsWith: "v_" }, orderId: null } },
+      include: { events: { orderBy: { timestamp: "desc" } } },
+      orderBy: { updatedAt: "desc" },
+      take: 150,
+    }),
+    prisma.cartSession.findMany({
+      where: { ...feedBaseWhere, visitorId: { startsWith: "v_" }, orderId: null },
+      include: { events: { orderBy: { timestamp: "desc" } } },
+      orderBy: { updatedAt: "desc" },
+      take: 50,
+    }),
+  ]);
+  const sessions = [...cartSessions, ...visitSessions];
 
   // Refresh product images for the feed.
   //
@@ -1376,7 +1387,7 @@ export default function Index() {
                 </div>
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                  {visibleSessions.slice(0, 50).map((session) => {
+                  {visibleSessions.slice(0, 150).map((session) => {
                     const st = getStatusStyle(session);
                     const isFlashing = flashIds.has(session.id);
                     const netTotal = session.cartTotal - session.totalDiscounts;
