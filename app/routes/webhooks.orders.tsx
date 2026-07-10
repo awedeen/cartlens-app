@@ -34,6 +34,21 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     const customerEmail = payload.customer?.email || payload.email;
     const orderValue = parseFloat(payload.total_price || "0");
 
+    // Idempotency: Shopify delivers webhooks AT LEAST once. If we've already
+    // recorded this order on a session, don't attribute it again — a redelivery
+    // would miss the (now converted) original session, fall through to the
+    // fallback, and double-count the order/revenue on a different session.
+    if (orderId) {
+      const already = await prisma.cartSession.findFirst({
+        where: { shopId: shopRecord.id, orderId },
+        select: { id: true },
+      });
+      if (already) {
+        console.log(`[Webhook Orders] Order ${orderId} already recorded on session ${already.id} — skipping`);
+        return data({ success: true });
+      }
+    }
+
     const cartToken = payload.cart_token;
     console.log(`[Webhook Orders] Order ${orderId} | cart_token: ${cartToken ? "[present]" : "[missing]"}`);
 

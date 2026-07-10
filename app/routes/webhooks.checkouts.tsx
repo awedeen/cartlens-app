@@ -109,11 +109,15 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     updates.totalDiscounts = totalDiscounts;
   }
 
-  // Geo from billing or shipping address
-  const billing = payload.billing_address || payload.shipping_address;  if (billing) {
-    if (billing.city) updates.city = billing.city;
-    if (billing.country) updates.country = billing.country;
-    if (billing.country_code) updates.countryCode = billing.country_code;  }
+  // Geo from billing or shipping address — fill-empty only. "Location" means the
+  // visitor's origin (captured first by the pixel); don't overwrite it with the
+  // ship-to address at checkout (a shopper can browse from one city, ship to another).
+  const billing = payload.billing_address || payload.shipping_address;
+  if (billing) {
+    if (billing.city && !cartSession.city) updates.city = billing.city;
+    if (billing.country && !cartSession.country) updates.country = billing.country;
+    if (billing.country_code && !cartSession.countryCode) updates.countryCode = billing.country_code;
+  }
 
   await prisma.cartSession.update({
     where: { id: cartSession.id },
