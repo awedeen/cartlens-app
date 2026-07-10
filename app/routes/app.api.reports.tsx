@@ -125,6 +125,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       WHERE "shopId" = ${shop.id}
         AND "createdAt" >= ${cutoff}
         AND "mergedInto" IS NULL
+        -- Pixel visit sessions ("v_…") are counted ONLY when they actually
+        -- converted (accelerated checkout landed on them). Un-converted pixel
+        -- visits are the pre-checkout twin of a webhook cart, so counting them
+        -- would double-count carts. Cart tokens are hex and never start with "v".
+        AND NOT ("visitorId" LIKE 'v_%' AND "orderPlaced" = false)
         AND (
           "isSuspectedBot" = false
           OR "orderPlaced" = true
@@ -153,6 +158,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       WHERE s."shopId" = ${shop.id}
         AND s."createdAt" >= ${cutoff}
         AND s."mergedInto" IS NULL
+        AND NOT (s."visitorId" LIKE 'v_%' AND s."orderPlaced" = false)
         AND (
           s."isSuspectedBot" = false
           OR s."orderPlaced" = true
@@ -180,6 +186,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         WHERE s."shopId" = ${shop.id}
           AND s."createdAt" >= ${cutoff}
           AND s."mergedInto" IS NULL
+          AND NOT (s."visitorId" LIKE 'v_%' AND s."orderPlaced" = false)
           AND (
             s."isSuspectedBot" = false
             OR s."orderPlaced" = true
