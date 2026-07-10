@@ -37,7 +37,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     const where: Prisma.CartSessionWhereInput = {
       shopId: shop.id,
       mergedInto: null,
-      NOT: { visitorId: { startsWith: "v_" }, orderPlaced: false },
+      NOT: { visitorId: { startsWith: "v_" }, orderId: null },
       OR: [
         { isSuspectedBot: false },
         { orderPlaced: true },

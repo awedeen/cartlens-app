@@ -831,11 +831,12 @@ export default function Index() {
   // A "visit" is a pixel session (visitorId "v_…") — the browsing/marketing
   // record. It's the pre-checkout twin of a webhook cart, so it's hidden from
   // the cart feed by default (revealed via the toggle). The one exception: a
-  // pixel session that actually converted (an accelerated "Buy it Now" order
-  // landed straight on it) is a real sale and always shown. Webhook sessions
-  // (cart tokens, hex — never start with "v") are always carts.
+  // pixel session the ORDERS WEBHOOK confirmed as a sale (orderId present — an
+  // accelerated "Buy it Now" that landed straight on it) is real and always
+  // shown. We key on orderId, not orderPlaced: only the webhook sets orderId,
+  // so this also hides legacy pixel phantoms that set orderPlaced with no order.
   const isVisitOnly = (s: SessionWithMeta) =>
-    s.visitorId.startsWith("v_") && !s.orderPlaced;
+    s.visitorId.startsWith("v_") && !s.orderId;
 
   const liveBotCount = sessions.filter(isHiddenBot).length;
   // Apply the bot filter first, then the visitor filter, so the counts/toggles
