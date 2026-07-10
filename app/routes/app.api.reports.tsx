@@ -38,6 +38,8 @@ export interface ReportsLeakyProduct {
   /** checkouts − conversions: sessions that reached checkout with this item but didn't buy. */
   lost: number;
   checkoutToOrderRate: number;
+  /** Average shipping cost seen by sessions that checked out with this product (null if unknown). */
+  avgShipping: number | null;
 }
 
 export interface ReportsTopReferrer {
@@ -61,6 +63,9 @@ export interface ReportsData {
   topProducts: ReportsTopProduct[];
   leakyProducts: ReportsLeakyProduct[];
   topReferrers: ReportsTopReferrer[];
+  /** Avg shipping among sessions that reached checkout and converted vs abandoned. */
+  avgShippingConverted: number | null;
+  avgShippingAbandoned: number | null;
 }
 
 // Raw row shapes returned by Prisma $queryRaw — COUNT returns BigInt in pg
@@ -71,6 +76,8 @@ interface SummaryRow {
   totalOrders: bigint;
   totalRevenue: number | null;
   avgCartValue: number | null;
+  avgShippingConverted: number | null;
+  avgShippingAbandoned: number | null;
 }
 interface ProductCartRow {
   productId: string;
@@ -82,6 +89,7 @@ interface ProductCheckoutRow {
   productId: string;
   checkouts: bigint;
   checkoutConversions: bigint;
+  avgShipping: number | null;
 }
 interface ReferrerRow {
   referrer: string;
@@ -123,7 +131,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         (COUNT(*) FILTER (WHERE "checkoutStarted" = true))::bigint                          AS "totalCheckouts",
         (COUNT(*) FILTER (WHERE "orderPlaced" = true))::bigint                              AS "totalOrders",
         COALESCE(SUM("orderValue") FILTER (WHERE "orderPlaced" = true), 0)::float           AS "totalRevenue",
-        COALESCE(AVG("cartTotal")  FILTER (WHERE "cartCreated" = true), 0)::float           AS "avgCartValue"
+        COALESCE(AVG("cartTotal")  FILTER (WHERE "cartCreated" = true), 0)::float           AS "avgCartValue",
+        (AVG("shippingCost") FILTER (WHERE "checkoutStarted" = true AND "orderPlaced" = true))::float  AS "avgShippingConverted",
+        (AVG("shippingCost") FILTER (WHERE "checkoutStarted" = true AND "orderPlaced" = false))::float AS "avgShippingAbandoned"
       FROM "CartSession"
       WHERE "shopId" = ${shop.id}
         AND "createdAt" >= ${since}
@@ -149,6 +159,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     const totalOrders    = Number(sum?.totalOrders    ?? 0n);
     const totalRevenue   = sum?.totalRevenue  ?? 0;
     const avgCartValue   = sum?.avgCartValue  ?? 0;
+    const avgShippingConverted = sum?.avgShippingConverted ?? null;
+    const avgShippingAbandoned = sum?.avgShippingAbandoned ?? null;
 
     // --- 2. Top products by cart_add events (with conversions) ---
     const productCartRows = await prisma.$queryRaw<ProductCartRow[]>`
@@ -184,7 +196,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         SELECT
           e."productId"                                                              AS "productId",
           COUNT(DISTINCT e."sessionId")::bigint                                       AS checkouts,
-          (COUNT(DISTINCT e."sessionId") FILTER (WHERE s."orderPlaced" = true))::bigint AS "checkoutConversions"
+          (COUNT(DISTINCT e."sessionId") FILTER (WHERE s."orderPlaced" = true))::bigint AS "checkoutConversions",
+          (AVG(s."shippingCost"))::float                                             AS "avgShipping"
         FROM "CartEvent" e
         INNER JOIN "CartSession" s ON s.id = e."sessionId"
         WHERE s."shopId" = ${shop.id}
@@ -204,17 +217,21 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     }
     // Per-product checkout funnel: how many distinct sessions reached checkout
     // with this item, and how many of those converted.
-    const checkoutByProduct = new Map<string, { checkouts: number; conversions: number }>(
+    const checkoutByProduct = new Map<string, { checkouts: number; conversions: number; avgShipping: number | null }>(
       checkoutRows.map((r) => [
         r.productId,
-        { checkouts: Number(r.checkouts), conversions: Number(r.checkoutConversions) },
+        {
+          checkouts: Number(r.checkouts),
+          conversions: Number(r.checkoutConversions),
+          avgShipping: r.avgShipping != null ? Number(r.avgShipping) : null,
+        },
       ])
     );
 
     const topProducts: ReportsTopProduct[] = productCartRows.map((row) => {
       const cartAdds = Number(row.cartAdds);
       const conversions = Number(row.conversions);
-      const co = checkoutByProduct.get(row.productId) ?? { checkouts: 0, conversions: 0 };
+      const co = checkoutByProduct.get(row.productId) ?? { checkouts: 0, conversions: 0, avgShipping: null };
       return {
         productId: row.productId,
         productTitle: row.productTitle || "Unknown",
@@ -241,6 +258,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         conversions: co.conversions,
         lost: co.checkouts - co.conversions,
         checkoutToOrderRate: co.checkouts > 0 ? Math.min(100, (co.conversions / co.checkouts) * 100) : 0,
+        avgShipping: co.avgShipping,
       }))
       .filter((p) => p.checkouts >= LEAKY_MIN_CHECKOUTS && p.lost > 0)
       .sort((a, b) => b.lost - a.lost || a.checkoutToOrderRate - b.checkoutToOrderRate)
@@ -294,6 +312,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       topProducts,
       leakyProducts,
       topReferrers,
+      avgShippingConverted,
+      avgShippingAbandoned,
     };
 
     return data(payload);

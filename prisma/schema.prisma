@@ -100,6 +100,11 @@ model CartSession {
   totalDiscounts Float @default(0)
   itemCount      Int   @default(0)
 
+  // Shipping the shopper saw at checkout (selected line; Shopify defaults to the
+  // cheapest). Null until they reach the shipping step; 0 = free shipping.
+  shippingCost  Float?
+  shippingTitle String?
+
   // Bot detection
   isSuspectedBot    Boolean @default(false)
   botReason         String?
