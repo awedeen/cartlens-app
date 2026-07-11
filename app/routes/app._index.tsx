@@ -158,6 +158,78 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     }
   }
 
+  // Resolve CLEAN product + variant titles by variant ID.
+  //
+  // Shopify's cart webhook delivers the line-item title as ONE combined string
+  // ("Product - Variant"), with no separate variant field — so cart events store
+  // the variant baked into productTitle and an empty variantTitle. We can't split
+  // it reliably (product names themselves contain dashes), so resolve the clean
+  // titles from the stored variant IDs and overwrite both in memory (immediate
+  // render) and in the DB where they differ. Self-healing: a load whose events
+  // are already clean writes nothing.
+  const VARIANT_RESOLVE_MAX = 100;
+  const displayedVariantIds = [
+    ...new Set(
+      sessions
+        .flatMap((s) => s.events)
+        .map((e) => e.variantId)
+        .filter((id): id is string => !!id)
+    ),
+  ].slice(0, VARIANT_RESOLVE_MAX);
+
+  if (displayedVariantIds.length > 0) {
+    try {
+      const vgids = displayedVariantIds.map((id) => `"gid://shopify/ProductVariant/${id}"`).join(", ");
+      const vResponse = await admin.graphql(`
+        query {
+          nodes(ids: [${vgids}]) {
+            ... on ProductVariant {
+              id
+              title
+              product { title }
+            }
+          }
+        }
+      `);
+      const vResult = await vResponse.json();
+      const titleMap = new Map<string, { productTitle: string; variantTitle: string | null }>();
+      for (const node of vResult?.data?.nodes || []) {
+        if (!node?.id) continue;
+        const numericId = node.id.replace("gid://shopify/ProductVariant/", "");
+        const productTitle = node.product?.title || null;
+        // Skip Shopify's "Default Title" placeholder for single-variant products.
+        const variantTitle = node.title && node.title !== "Default Title" ? node.title : null;
+        if (productTitle) titleMap.set(numericId, { productTitle, variantTitle });
+      }
+
+      // Apply clean titles; batch DB writes grouped by variant (same target).
+      const variantToEventIds = new Map<string, string[]>();
+      for (const s of sessions) {
+        for (const e of s.events) {
+          if (!e.variantId) continue;
+          const clean = titleMap.get(e.variantId);
+          if (!clean) continue; // variant deleted / not found — keep what we have
+          if (e.productTitle === clean.productTitle && e.variantTitle === clean.variantTitle) continue;
+          e.productTitle = clean.productTitle; // in-memory for render
+          e.variantTitle = clean.variantTitle;
+          if (!variantToEventIds.has(e.variantId)) variantToEventIds.set(e.variantId, []);
+          variantToEventIds.get(e.variantId)!.push(e.id);
+        }
+      }
+      await Promise.all(
+        Array.from(variantToEventIds.entries()).map(([variantId, ids]) => {
+          const clean = titleMap.get(variantId)!;
+          return prisma.cartEvent.updateMany({
+            where: { id: { in: ids } },
+            data: { productTitle: clean.productTitle, variantTitle: clean.variantTitle },
+          });
+        })
+      );
+    } catch (vErr) {
+      console.error("[Loader] Failed to resolve variant titles:", vErr);
+    }
+  }
+
   // Compute visit numbers for repeat visitors
   const visitCountMap = new Map<string, number>();
   const customerEmails = sessions.map(s => s.customerEmail).filter(Boolean) as string[];
