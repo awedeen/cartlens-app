@@ -795,8 +795,15 @@ export default function Index() {
         ) : (
           <div style={{ width: "52px", height: "52px", borderRadius: "4px", background: "#f0f0f0", flexShrink: 0 }} />
         )}
-        <div style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "12px", color: item.removed ? "#6d7175" : "#202223", textDecoration: item.removed ? "line-through" : "none" }}>
-          {item.productTitle}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "12px", color: item.removed ? "#6d7175" : "#202223", textDecoration: item.removed ? "line-through" : "none" }}>
+            {item.productTitle}
+          </div>
+          {item.variantTitle && item.variantTitle !== "Default Title" && (
+            <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "11px", color: "#919eab", textDecoration: item.removed ? "line-through" : "none", marginTop: "1px" }}>
+              {item.variantTitle}
+            </div>
+          )}
         </div>
         {item.removed ? (
           <div style={{ fontSize: "11px", color: "#d82c0d", flexShrink: 0 }}>Removed</div>
@@ -1244,17 +1251,32 @@ export default function Index() {
                                   </div>
                                   <div style={{ fontSize: "14px", color: "#202223", overflow: "hidden", textOverflow: "ellipsis" }}>
                                     {event.eventType === "cart_add" && (
-                                      <>Added {event.productTitle}{event.variantTitle && ` - ${event.variantTitle}`}{event.quantity ? ` (${event.quantity}x)` : ""}{event.price ? ` — $${event.price.toFixed(2)}` : ""}</>
+                                      <>
+                                        Added {event.productTitle}{event.quantity ? ` (${event.quantity}x)` : ""}{event.price ? ` — $${event.price.toFixed(2)}` : ""}
+                                        {event.variantTitle && event.variantTitle !== "Default Title" && (
+                                          <div style={{ fontSize: "12px", color: "#919eab", marginTop: "1px" }}>{event.variantTitle}</div>
+                                        )}
+                                      </>
                                     )}
                                     {event.eventType === "cart_remove" && (
-                                      <>Removed {event.productTitle}{event.variantTitle && ` - ${event.variantTitle}`}</>
+                                      <>
+                                        Removed {event.productTitle}
+                                        {event.variantTitle && event.variantTitle !== "Default Title" && (
+                                          <div style={{ fontSize: "12px", color: "#919eab", marginTop: "1px" }}>{event.variantTitle}</div>
+                                        )}
+                                      </>
                                     )}
                                     {event.eventType === "page_view" && (
                                       <>Viewed <span style={{ fontWeight: 500 }}>{event.pageTitle || getPagePath(event.pageUrl) || "page"}</span>{event.pageTitle && event.pageUrl ? <span style={{ color: "#919eab" }}> · {getPagePath(event.pageUrl)}</span> : null}</>
                                     )}
                                     {event.eventType === "checkout_started" && "Checkout started"}
                                     {event.eventType === "checkout_item" && (
-                                      <>In checkout: {event.productTitle}{event.variantTitle && ` - ${event.variantTitle}`}{event.quantity ? ` (${event.quantity}x)` : ""}{event.price ? ` — $${event.price.toFixed(2)}` : ""}</>
+                                      <>
+                                        In checkout: {event.productTitle}{event.quantity ? ` (${event.quantity}x)` : ""}{event.price ? ` — $${event.price.toFixed(2)}` : ""}
+                                        {event.variantTitle && event.variantTitle !== "Default Title" && (
+                                          <div style={{ fontSize: "12px", color: "#919eab", marginTop: "1px" }}>{event.variantTitle}</div>
+                                        )}
+                                      </>
                                     )}
                                     {event.eventType === "checkout_completed" && (
                                       <>Order placed{selectedSession.orderNumber ? ` — #${selectedSession.orderNumber}` : ""}</>
