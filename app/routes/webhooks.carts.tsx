@@ -144,6 +144,58 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     // gate burst-cluster detection so we don't re-run it on every quantity change.
     let sessionWasJustCreated = false;
 
+    // A converted session is TERMINAL — the completed order must never be mutated
+    // by a later cart webhook. Two things fire on that token after checkout:
+    //   1. Shopify empties the cart (carts/update with no line items).
+    //   2. Shopify reuses the same cart_token for the shopper's NEXT cart.
+    // Both would otherwise strip the order to zero or pile unrelated products
+    // onto it (the exact corruption we're fixing). Lock the converted session:
+    if (session && session.orderPlaced) {
+      if (lineItems.length === 0) {
+        // Post-purchase cart clear (or any later empty update): ignore entirely.
+        return data({ success: true });
+      }
+
+      // Items present on a converted session ⇒ the token is being reused. But
+      // Shopify redelivers webhooks, so a redelivered PRE-conversion update can
+      // land here looking like new activity. Distinguish a genuinely new cart
+      // from an echo of the same order by comparing product sets: an identical
+      // set is the same cart (ignore); a different set is a new cart.
+      const net = new Map<string, number>();
+      for (const e of session.events) {
+        if (!e.variantId) continue;
+        const q = e.quantity || 0;
+        if (e.eventType === "cart_add") net.set(e.variantId, (net.get(e.variantId) || 0) + q);
+        else if (e.eventType === "cart_remove") net.set(e.variantId, (net.get(e.variantId) || 0) - q);
+      }
+      const orderVariants = new Set<string>();
+      for (const [v, q] of net) if (q > 0) orderVariants.add(v);
+      const incomingVariants = new Set<string>(
+        lineItems.map((i: any) => i.variant_id?.toString()).filter(Boolean),
+      );
+      const sameCart =
+        orderVariants.size === incomingVariants.size &&
+        [...incomingVariants].every((v) => orderVariants.has(v));
+      if (sameCart) {
+        // Echo of the completed cart — ignore so the order stays intact.
+        return data({ success: true });
+      }
+
+      // Genuinely new cart on a reused token. Free the token from the completed
+      // session (rotate its key aside so the unique (shop, token) slot opens up),
+      // then fall through to create a fresh session under the token — the
+      // shopper's "new empty cart". The old order keeps its orderId/orderNumber;
+      // future orders still attribute by exact-token match to the fresh session.
+      await prisma.cartSession.update({
+        where: { id: session.id },
+        data: { visitorId: `converted:${session.id}:${session.visitorId}` },
+      });
+      session = null;
+      console.log(
+        `[Webhook Carts] Token reused after conversion — rotated old session aside, starting fresh cart`,
+      );
+    }
+
     if (topic === "CARTS_CREATE" && !session && lineItems.length > 0) {
       session = await prisma.cartSession.upsert({
         where: { shopId_visitorId: { shopId: shopRecord.id, visitorId: cartToken } },

@@ -60,6 +60,17 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   if (!cartSession) {
     return data({ success: true }, { status: 200 });
   }
+
+  // A converted session is terminal. Shopify redelivers checkouts/update freely,
+  // so a late or duplicate one can arrive after the order — writing it back onto
+  // the completed session would overwrite the definitive customer, shipping, and
+  // events the orders webhook already set. Skip. (If the token was reused for a
+  // genuinely new checkout, the carts webhook will have already rotated this
+  // session aside and created a fresh one, so the new checkout lands there.)
+  if (cartSession.orderPlaced) {
+    return data({ success: true }, { status: 200 });
+  }
+
   // Update session — mark checkout started
   const updates: Prisma.CartSessionUpdateInput = { checkoutStarted: true };
 
